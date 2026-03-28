@@ -42,6 +42,7 @@ type App struct {
 	files    FileStore
 	provider provider.DiscoveryProvider
 	now      func() time.Time
+	status   io.Writer
 }
 
 type Options struct {
@@ -67,6 +68,7 @@ func New(files FileStore, discovery provider.DiscoveryProvider) (*App, error) {
 		files:    files,
 		provider: discovery,
 		now:      time.Now,
+		status:   os.Stderr,
 	}, nil
 }
 
@@ -90,20 +92,29 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	dstProjects, err := cfg.ResolveProjects(opts.Org, opts.Workload, opts.Environment)
+	targets, err := cfg.ResolveTargets(opts.Org, opts.Workload, opts.Environment)
 	if err != nil {
 		return err
 	}
+	projectIDs := uniqueProjectIDs(targets)
 
 	if opts.Type == TypeVPN {
 		scope := "selected destination projects"
-		if len(dstProjects) == 1 {
-			scope = fmt.Sprintf("destination project %q", dstProjects[0])
+		if len(projectIDs) == 1 {
+			scope = fmt.Sprintf("destination project %q", projectIDs[0])
 		}
 		return fmt.Errorf("vpn is not implemented yet for %s", scope)
 	}
 
-	report, err := a.buildInterconnectReport(ctx, opts, dstProjects)
+	a.statusf(
+		"⏳ Running mindmap for org=%s workload=%s environment=%s source_project=%s",
+		opts.Org,
+		statusValueOrAll(opts.Workload),
+		statusValueOrAll(opts.Environment),
+		opts.SourceProject,
+	)
+
+	report, err := a.buildInterconnectReport(ctx, opts, targets)
 	if err != nil {
 		return err
 	}
@@ -124,7 +135,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("write output %q: %w", outputPath, err)
 	}
 
-	fmt.Fprintf(io.Discard, "%s", outputPath)
+	a.statusf("output file: %s", outputPath)
 	return nil
 }
 
@@ -198,7 +209,7 @@ Flags:
 `) + "\n"
 }
 
-func (a *App) buildInterconnectReport(ctx context.Context, opts Options, dstProjects []string) (model.Report, error) {
+func (a *App) buildInterconnectReport(ctx context.Context, opts Options, targets []config.ResolvedTarget) (model.Report, error) {
 	interconnects, err := a.provider.ListDedicatedInterconnects(ctx, opts.SourceProject)
 	if err != nil {
 		return model.Report{}, err
@@ -208,26 +219,45 @@ func (a *App) buildInterconnectReport(ctx context.Context, opts Options, dstProj
 	}
 
 	var items []model.MappingItem
-	for _, dstProject := range dstProjects {
-		attachments, err := a.provider.ListVLANAttachments(ctx, dstProject)
-		if err != nil {
-			return model.Report{}, err
-		}
-		routers, err := a.provider.ListCloudRouters(ctx, dstProject)
-		if err != nil {
-			return model.Report{}, err
-		}
-
-		statusByRouter := make(map[string]model.RouterStatus, len(routers))
-		for _, router := range routers {
-			status, err := a.provider.GetCloudRouterStatus(ctx, dstProject, router.Region, router.Name)
+	itemsByProject := make(map[string][]model.MappingItem, len(targets))
+	appendedProjects := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		projectItems, ok := itemsByProject[target.ProjectID]
+		if !ok {
+			attachments, err := a.provider.ListVLANAttachments(ctx, target.ProjectID)
 			if err != nil {
 				return model.Report{}, err
 			}
-			statusByRouter[routerKey(router.Region, router.Name)] = status
+			routers, err := a.provider.ListCloudRouters(ctx, target.ProjectID)
+			if err != nil {
+				return model.Report{}, err
+			}
+
+			statusByRouter := make(map[string]model.RouterStatus, len(routers))
+			for _, router := range routers {
+				status, err := a.provider.GetCloudRouterStatus(ctx, target.ProjectID, router.Region, router.Name)
+				if err != nil {
+					return model.Report{}, err
+				}
+				statusByRouter[routerKey(router.Region, router.Name)] = status
+			}
+
+			projectItems = buildMappingItems(opts.SourceProject, target.ProjectID, interconnects, attachments, routers, statusByRouter)
+			itemsByProject[target.ProjectID] = projectItems
 		}
 
-		items = append(items, buildMappingItems(opts.SourceProject, dstProject, interconnects, attachments, routers, statusByRouter)...)
+		if _, ok := appendedProjects[target.ProjectID]; !ok {
+			items = append(items, projectItems...)
+			appendedProjects[target.ProjectID] = struct{}{}
+		}
+
+		a.statusf(
+			"⏳ Completed org=%s workload=%s environment=%s project=%s",
+			target.Org,
+			target.Workload,
+			target.Environment,
+			target.ProjectID,
+		)
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].SrcInterconnect != items[j].SrcInterconnect {
@@ -252,8 +282,9 @@ func (a *App) buildInterconnectReport(ctx context.Context, opts Options, dstProj
 	})
 
 	destinationProject := ""
-	if len(dstProjects) == 1 {
-		destinationProject = dstProjects[0]
+	projectIDs := uniqueProjectIDs(targets)
+	if len(projectIDs) == 1 {
+		destinationProject = projectIDs[0]
 	}
 	return model.Report{
 		Type:               opts.Type,
@@ -266,6 +297,13 @@ func (a *App) buildInterconnectReport(ctx context.Context, opts Options, dstProj
 		},
 		Items: items,
 	}, nil
+}
+
+func (a *App) statusf(format string, args ...any) {
+	if a.status == nil {
+		return
+	}
+	fmt.Fprintf(a.status, format+"\n", args...)
 }
 
 func buildMappingItems(srcProject, dstProject string, interconnects []model.DedicatedInterconnect, attachments []model.VLANAttachment, routers []model.CloudRouter, statuses map[string]model.RouterStatus) []model.MappingItem {
@@ -403,4 +441,24 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func statusValueOrAll(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return "all"
+	}
+	return value
+}
+
+func uniqueProjectIDs(targets []config.ResolvedTarget) []string {
+	var projectIDs []string
+	seen := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		if _, ok := seen[target.ProjectID]; ok {
+			continue
+		}
+		seen[target.ProjectID] = struct{}{}
+		projectIDs = append(projectIDs, target.ProjectID)
+	}
+	return projectIDs
 }

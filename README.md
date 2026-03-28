@@ -93,6 +93,7 @@ GOCACHE=/tmp/go-build-cache /usr/local/go/bin/go run ./cmd/mindmap \
 - Maps router interfaces and BGP peers where available
 - Uses a shared hierarchy in JSON/tree/Mermaid output rooted at `org -> workload -> environment -> src_project -> src_interconnect`
 - Uses one canonical field set across outputs, matching the CSV/TSV column names
+- Writes progress messages to `stderr`, including a `⏳` start line, one completion line per resolved org/workload/environment tuple, and a final `output file: <path>` line on success
 - Uses Google Cloud Go libraries and ADC instead of shelling out to `gcloud`
 
 ### `-t vpn`
