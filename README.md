@@ -132,4 +132,4 @@ org,src_project,src_interconnect,dst_project,region,src_region,src_state,attachm
 - Mermaid output is rendered as a compact flowchart instead of a verbose field-by-field mind map
 - Runtime discovery is performed with Google Compute API clients, not the `gcloud` CLI
 
-<p align="center"><span style="font-size: 75%;">Vibe-Coded with 🖤</span></p>
+<p align="center"><sub>Vibe-Coded with &#x2665;&#xFE0E;</sub></p>
