@@ -24,6 +24,13 @@ type Environment struct {
 	ProjectID string
 }
 
+type ResolvedTarget struct {
+	Org         string
+	Workload    string
+	Environment string
+	ProjectID   string
+}
+
 func Parse(data []byte) (Config, error) {
 	lines := strings.Split(string(data), "\n")
 	var cfg Config
@@ -130,6 +137,24 @@ func (c Config) Resolve(orgName, workloadName, envName string) (string, error) {
 }
 
 func (c Config) ResolveProjects(orgName, workloadName, envName string) ([]string, error) {
+	targets, err := c.ResolveTargets(orgName, workloadName, envName)
+	if err != nil {
+		return nil, err
+	}
+
+	var projects []string
+	seen := make(map[string]struct{})
+	for _, target := range targets {
+		if _, ok := seen[target.ProjectID]; ok {
+			continue
+		}
+		seen[target.ProjectID] = struct{}{}
+		projects = append(projects, target.ProjectID)
+	}
+	return projects, nil
+}
+
+func (c Config) ResolveTargets(orgName, workloadName, envName string) ([]ResolvedTarget, error) {
 	org, err := c.findOrg(orgName)
 	if err != nil {
 		return nil, err
@@ -140,8 +165,7 @@ func (c Config) ResolveProjects(orgName, workloadName, envName string) ([]string
 		return nil, err
 	}
 
-	var projects []string
-	seen := make(map[string]struct{})
+	var targets []ResolvedTarget
 	if strings.TrimSpace(workloadName) == "" && strings.TrimSpace(envName) != "" {
 		envFound := false
 		for _, workload := range workloads {
@@ -151,14 +175,11 @@ func (c Config) ResolveProjects(orgName, workloadName, envName string) ([]string
 			}
 			envFound = true
 			for _, env := range envs {
-				if strings.TrimSpace(env.ProjectID) == "" {
-					return nil, fmt.Errorf("project_id is empty for org %q workload %q env %q", org.Name, workload.Name, env.Name)
+				target, err := newResolvedTarget(org.Name, workload.Name, env)
+				if err != nil {
+					return nil, err
 				}
-				if _, ok := seen[env.ProjectID]; ok {
-					continue
-				}
-				seen[env.ProjectID] = struct{}{}
-				projects = append(projects, env.ProjectID)
+				targets = append(targets, target)
 			}
 		}
 		if !envFound {
@@ -171,22 +192,19 @@ func (c Config) ResolveProjects(orgName, workloadName, envName string) ([]string
 				return nil, err
 			}
 			for _, env := range envs {
-				if strings.TrimSpace(env.ProjectID) == "" {
-					return nil, fmt.Errorf("project_id is empty for org %q workload %q env %q", org.Name, workload.Name, env.Name)
+				target, err := newResolvedTarget(org.Name, workload.Name, env)
+				if err != nil {
+					return nil, err
 				}
-				if _, ok := seen[env.ProjectID]; ok {
-					continue
-				}
-				seen[env.ProjectID] = struct{}{}
-				projects = append(projects, env.ProjectID)
+				targets = append(targets, target)
 			}
 		}
 	}
 
-	if len(projects) == 0 {
+	if len(targets) == 0 {
 		return nil, fmt.Errorf("no projects matched org %q workload %q env %q", orgName, workloadName, envName)
 	}
-	return projects, nil
+	return targets, nil
 }
 
 func matchingEnvironments(workload Workload, envName string) []Environment {
@@ -197,6 +215,18 @@ func matchingEnvironments(workload Workload, envName string) []Environment {
 		}
 	}
 	return matches
+}
+
+func newResolvedTarget(orgName, workloadName string, env Environment) (ResolvedTarget, error) {
+	if strings.TrimSpace(env.ProjectID) == "" {
+		return ResolvedTarget{}, fmt.Errorf("project_id is empty for org %q workload %q env %q", orgName, workloadName, env.Name)
+	}
+	return ResolvedTarget{
+		Org:         orgName,
+		Workload:    workloadName,
+		Environment: env.Name,
+		ProjectID:   env.ProjectID,
+	}, nil
 }
 
 func (c Config) findOrg(orgName string) (Org, error) {

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	compute "google.golang.org/api/compute/v1"
@@ -51,6 +52,7 @@ func (p *ComputeProvider) ListVLANAttachments(ctx context.Context, project strin
 					State:        firstNonEmpty(attachment.OperationalStatus, attachment.State, "unknown"),
 					Interconnect: basename(attachment.Interconnect),
 					Router:       basename(attachment.Router),
+					VLANID:       formatVLANID(attachment.VlanTag8021q),
 				})
 			}
 		}
@@ -70,6 +72,7 @@ func (p *ComputeProvider) ListCloudRouters(ctx context.Context, project string) 
 				current := model.CloudRouter{
 					Name:   router.Name,
 					Region: basename(router.Region),
+					State:  "unknown",
 				}
 				for _, iface := range router.Interfaces {
 					if iface == nil {
@@ -137,6 +140,13 @@ func basename(value string) string {
 	}
 	parts := strings.Split(strings.TrimRight(value, "/"), "/")
 	return parts[len(parts)-1]
+}
+
+func formatVLANID(value int64) string {
+	if value <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(value, 10)
 }
 
 func firstNonEmpty(values ...string) string {

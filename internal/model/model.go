@@ -17,6 +17,7 @@ type VLANAttachment struct {
 	State        string
 	Interconnect string
 	Router       string
+	VLANID       string
 }
 
 type RouterInterface struct {
@@ -36,6 +37,7 @@ type BGPPeer struct {
 type CloudRouter struct {
 	Name       string
 	Region     string
+	State      string
 	Interfaces []RouterInterface
 	BGPPeers   []BGPPeer
 }
@@ -54,21 +56,23 @@ type RouterStatus struct {
 }
 
 type MappingItem struct {
-	SrcProject      string `json:"src_project"`
-	SrcInterconnect string `json:"src_interconnect"`
-	SrcRegion       string `json:"src_region"`
-	SrcState        string `json:"src_state"`
-	DstProject      string `json:"dst_project"`
-	Region          string `json:"region"`
-	Attachment      string `json:"attachment"`
-	AttachmentState string `json:"attachment_state"`
-	Router          string `json:"router"`
-	Interface       string `json:"interface"`
-	BGPPeerName     string `json:"bgp_peer_name"`
-	LocalIP         string `json:"local_ip"`
-	RemoteIP        string `json:"remote_ip"`
-	BGPStatus       string `json:"bgp_status"`
-	Mapped          bool   `json:"mapped"`
+	SrcProject                string `json:"src_project"`
+	SrcInterconnect           string `json:"src_interconnect"`
+	Mapped                    bool   `json:"mapped"`
+	SrcRegion                 string `json:"src_region"`
+	SrcState                  string `json:"src_state"`
+	DstProject                string `json:"dst_project"`
+	DstRegion                 string `json:"dst_region"`
+	DstVLANAttachment         string `json:"dst_vlan_attachment"`
+	DstVLANAttachmentState    string `json:"dst_vlan_attachment_state"`
+	DstVLANAttachmentVLANID   string `json:"dst_vlan_attachment_vlanid"`
+	DstCloudRouter            string `json:"dst_cloud_router"`
+	DstCloudRouterState       string `json:"dst_cloud_router_state"`
+	DstCloudRouterInterface   string `json:"dst_cloud_router_interface"`
+	DstCloudRouterInterfaceIP string `json:"dst_cloud_router_interface_ip"`
+	RemoteBGPPeer             string `json:"remote_bgp_peer"`
+	RemoteBGPPeerIP           string `json:"remote_bgp_peer_ip"`
+	BGPPeeringStatus          string `json:"bgp_peering_status"`
 }
 
 type Report struct {

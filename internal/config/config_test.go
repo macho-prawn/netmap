@@ -86,6 +86,34 @@ func TestResolveProjectsExpansion(t *testing.T) {
 	}
 }
 
+func TestResolveTargetsPreservesTupleOrderAndDuplicates(t *testing.T) {
+	cfg, err := Parse([]byte(duplicateProjectConfig))
+	if err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+
+	targets, err := cfg.ResolveTargets("dbc", "", "dev")
+	if err != nil {
+		t.Fatalf("resolve targets: %v", err)
+	}
+
+	want := []ResolvedTarget{
+		{Org: "dbc", Workload: "native", Environment: "dev", ProjectID: "shared-project"},
+		{Org: "dbc", Workload: "platform", Environment: "dev", ProjectID: "shared-project"},
+	}
+	if !reflect.DeepEqual(targets, want) {
+		t.Fatalf("expected %v, got %v", want, targets)
+	}
+
+	projects, err := cfg.ResolveProjects("dbc", "", "dev")
+	if err != nil {
+		t.Fatalf("resolve projects: %v", err)
+	}
+	if !reflect.DeepEqual(projects, []string{"shared-project"}) {
+		t.Fatalf("expected deduped projects, got %v", projects)
+	}
+}
+
 func TestResolveErrors(t *testing.T) {
 	cfg, err := Parse([]byte(sampleConfig))
 	if err != nil {
@@ -128,4 +156,18 @@ org:
         env:
           - name: dev
             project_id: project-shared
+`
+
+const duplicateProjectConfig = `
+org:
+  - name: dbc
+    workload:
+      - name: native
+        env:
+          - name: dev
+            project_id: shared-project
+      - name: platform
+        env:
+          - name: dev
+            project_id: shared-project
 `

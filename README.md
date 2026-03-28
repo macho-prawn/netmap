@@ -91,8 +91,9 @@ GOCACHE=/tmp/go-build-cache /usr/local/go/bin/go run ./cmd/mindmap \
 - Fails if the source project has no dedicated interconnects
 - Lists destination VLAN attachments and Cloud Routers across regions
 - Maps router interfaces and BGP peers where available
-- Uses a shared hierarchy in CSV/JSON/tree output rooted at `org -> src project -> dedicated interconnect -> dst project -> region`
-- Places `local_ip` next to `interface` and `remote_ip` next to `bgp_peer_name` in CSV/TSV output
+- Uses a shared hierarchy in JSON/tree/Mermaid output rooted at `org -> workload -> environment -> src_project -> src_interconnect`
+- Uses one canonical field set across outputs, matching the CSV/TSV column names
+- Writes progress messages to `stderr`, including a `⏳` start line, one completion line per resolved org/workload/environment tuple, and a final `output file: <path>` line on success
 - Uses Google Cloud Go libraries and ADC instead of shelling out to `gcloud`
 
 ### `-t vpn`
@@ -121,7 +122,7 @@ If `-f` is provided, Mermaid is suppressed and only the selected format is writt
 ### CSV/TSV columns
 
 ```text
-org,src_project,src_interconnect,dst_project,region,src_region,src_state,attachment,attachment_state,router,interface,local_ip,bgp_peer_name,remote_ip,bgp_status,mapped
+org,workload,environment,src_project,src_interconnect,mapped,src_region,src_state,dst_project,dst_region,dst_vlan_attachment,dst_vlan_attachment_state,dst_vlan_attachment_vlanid,dst_cloud_router,dst_cloud_router_state,dst_cloud_router_interface,dst_cloud_router_interface_ip,remote_bgp_peer,remote_bgp_peer_ip,bgp_peering_status
 ```
 
 ## Notes
@@ -129,7 +130,7 @@ org,src_project,src_interconnect,dst_project,region,src_region,src_state,attachm
 - Source dedicated interconnects are modeled as global resources
 - Destination VLAN attachments and Cloud Routers are modeled as regional resources
 - Unmapped source interconnects are still included in the output
-- Mermaid output is rendered as a compact flowchart instead of a verbose field-by-field mind map
+- Mermaid output fans each dedicated interconnect into shared `dst_project` and `dst_region` nodes before fanning out to attachment, router, interface, and BGP peer details
 - Runtime discovery is performed with Google Compute API clients, not the `gcloud` CLI
 
 <p align="center"><sub>Vibe-Coded with &#x2665;&#xFE0E;</sub></p>

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -35,6 +36,9 @@ type mockProvider struct {
 	attachmentsByProject   map[string][]model.VLANAttachment
 	routersByProject       map[string][]model.CloudRouter
 	statusesByProjectRoute map[string]model.RouterStatus
+	attachmentCalls        map[string]int
+	routerCalls            map[string]int
+	statusCalls            map[string]int
 }
 
 func (m mockProvider) ListDedicatedInterconnects(context.Context, string) ([]model.DedicatedInterconnect, error) {
@@ -42,6 +46,9 @@ func (m mockProvider) ListDedicatedInterconnects(context.Context, string) ([]mod
 }
 
 func (m mockProvider) ListVLANAttachments(_ context.Context, project string) ([]model.VLANAttachment, error) {
+	if m.attachmentCalls != nil {
+		m.attachmentCalls[project]++
+	}
 	if len(m.attachmentsByProject) > 0 {
 		return m.attachmentsByProject[project], nil
 	}
@@ -49,6 +56,9 @@ func (m mockProvider) ListVLANAttachments(_ context.Context, project string) ([]
 }
 
 func (m mockProvider) ListCloudRouters(_ context.Context, project string) ([]model.CloudRouter, error) {
+	if m.routerCalls != nil {
+		m.routerCalls[project]++
+	}
 	if len(m.routersByProject) > 0 {
 		return m.routersByProject[project], nil
 	}
@@ -56,6 +66,9 @@ func (m mockProvider) ListCloudRouters(_ context.Context, project string) ([]mod
 }
 
 func (m mockProvider) GetCloudRouterStatus(_ context.Context, project, region, router string) (model.RouterStatus, error) {
+	if m.statusCalls != nil {
+		m.statusCalls[project+"/"+region+"/"+router]++
+	}
 	if len(m.statusesByProjectRoute) > 0 {
 		return m.statusesByProjectRoute[project+"/"+region+"/"+router], nil
 	}
@@ -156,6 +169,8 @@ func TestRunWritesMermaidByDefault(t *testing.T) {
 	app.now = func() time.Time {
 		return time.Date(2026, time.March, 28, 0, 0, 0, 0, time.UTC)
 	}
+	var status bytes.Buffer
+	app.status = &status
 
 	err = app.Run(context.Background(), []string{
 		"-t", "interconnect",
@@ -173,8 +188,18 @@ func TestRunWritesMermaidByDefault(t *testing.T) {
 		t.Fatalf("expected mermaid output file to be written")
 	}
 	content := string(data)
-	if !strings.Contains(content, "flowchart LR") || !strings.Contains(content, "peer-1") || !strings.Contains(content, "if: if-1") {
+	if !strings.Contains(content, "flowchart LR") || !strings.Contains(content, "remote_bgp_peer: peer-1") || !strings.Contains(content, "dst_cloud_router_interface: if-1") {
 		t.Fatalf("unexpected mermaid content: %s", content)
+	}
+	statusOutput := status.String()
+	if !strings.Contains(statusOutput, "⏳ Running mindmap for org=dbc workload=native environment=dev source_project=src-project") {
+		t.Fatalf("expected start status message, got: %s", statusOutput)
+	}
+	if !strings.Contains(statusOutput, "⏳ Completed org=dbc workload=native environment=dev project=project") {
+		t.Fatalf("expected completion status message, got: %s", statusOutput)
+	}
+	if !strings.Contains(statusOutput, "output file: mindmap-interconnect-src-project-to-project-20260328T000000Z.mmd") {
+		t.Fatalf("expected output file status message, got: %s", statusOutput)
 	}
 }
 
@@ -193,6 +218,8 @@ func TestRunSuppressesMermaidWhenFormatProvided(t *testing.T) {
 	app.now = func() time.Time {
 		return time.Date(2026, time.March, 28, 0, 0, 0, 0, time.UTC)
 	}
+	var status bytes.Buffer
+	app.status = &status
 
 	err = app.Run(context.Background(), []string{
 		"-t", "interconnect",
@@ -211,6 +238,9 @@ func TestRunSuppressesMermaidWhenFormatProvided(t *testing.T) {
 	}
 	if _, ok := store.files["mindmap-interconnect-src-project-to-project-20260328T000000Z.json"]; !ok {
 		t.Fatalf("expected json output")
+	}
+	if !strings.Contains(status.String(), "output file: mindmap-interconnect-src-project-to-project-20260328T000000Z.json") {
+		t.Fatalf("expected output status message, got: %s", status.String())
 	}
 }
 
@@ -301,6 +331,8 @@ func TestRunWithOrgFanoutWritesCombinedOutput(t *testing.T) {
 	app.now = func() time.Time {
 		return time.Date(2026, time.March, 28, 0, 0, 0, 0, time.UTC)
 	}
+	var status bytes.Buffer
+	app.status = &status
 
 	err = app.Run(context.Background(), []string{
 		"-t", "interconnect",
@@ -319,6 +351,16 @@ func TestRunWithOrgFanoutWritesCombinedOutput(t *testing.T) {
 	content := string(data)
 	if !strings.Contains(content, "project-a") || !strings.Contains(content, "project-b") {
 		t.Fatalf("expected fanout destinations in tree output, got: %s", content)
+	}
+	statusOutput := status.String()
+	if !strings.Contains(statusOutput, "⏳ Completed org=dbc workload=native environment=dev project=project-a") {
+		t.Fatalf("expected dev completion status, got: %s", statusOutput)
+	}
+	if !strings.Contains(statusOutput, "⏳ Completed org=dbc workload=native environment=prod project=project-b") {
+		t.Fatalf("expected prod completion status, got: %s", statusOutput)
+	}
+	if !strings.Contains(statusOutput, "output file: mindmap-interconnect-src-project-to-dbc-all-20260328T000000Z.tree.txt") {
+		t.Fatalf("expected output status message, got: %s", statusOutput)
 	}
 }
 
@@ -388,6 +430,97 @@ func TestBuildMappingItemsIncludesGlobalSrcRegionAndUnmapped(t *testing.T) {
 	}
 }
 
+func TestRunWithDuplicateProjectFanoutCachesDiscoveryAndLogsEachTuple(t *testing.T) {
+	store := &memoryFileStore{
+		files: map[string][]byte{
+			"config.yaml": []byte(duplicateProjectConfig),
+		},
+	}
+	provider := mockProvider{
+		interconnects: []model.DedicatedInterconnect{{Name: "ic-1", State: "ACTIVE"}},
+		attachmentsByProject: map[string][]model.VLANAttachment{
+			"shared-project": {{
+				Name:         "attachment-shared",
+				Region:       "us-central1",
+				State:        "ACTIVE",
+				Interconnect: "ic-1",
+				Router:       "router-shared",
+			}},
+		},
+		routersByProject: map[string][]model.CloudRouter{
+			"shared-project": {{
+				Name:   "router-shared",
+				Region: "us-central1",
+				Interfaces: []model.RouterInterface{{
+					Name:                     "if-shared",
+					LinkedInterconnectAttach: "attachment-shared",
+					IPRange:                  "169.254.30.1/30",
+				}},
+				BGPPeers: []model.BGPPeer{{
+					Name:         "peer-shared",
+					Interface:    "if-shared",
+					LocalIP:      "169.254.30.1",
+					RemoteIP:     "169.254.30.2",
+					SessionState: "UP",
+				}},
+			}},
+		},
+		statusesByProjectRoute: map[string]model.RouterStatus{
+			"shared-project/us-central1/router-shared": {
+				RouterName: "router-shared",
+				Region:     "us-central1",
+				Peers: []model.BGPPeerStatus{{
+					Name:         "peer-shared",
+					LocalIP:      "169.254.30.1",
+					RemoteIP:     "169.254.30.2",
+					SessionState: "UP",
+				}},
+			},
+		},
+		attachmentCalls: map[string]int{},
+		routerCalls:     map[string]int{},
+		statusCalls:     map[string]int{},
+	}
+	app, err := New(store, provider)
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.now = func() time.Time {
+		return time.Date(2026, time.March, 28, 0, 0, 0, 0, time.UTC)
+	}
+	var status bytes.Buffer
+	app.status = &status
+
+	err = app.Run(context.Background(), []string{
+		"-t", "interconnect",
+		"-o", "dbc",
+		"-e", "dev",
+		"-p", "src-project",
+		"-f", "csv",
+	})
+	if err != nil {
+		t.Fatalf("run app: %v", err)
+	}
+
+	if provider.attachmentCalls["shared-project"] != 1 {
+		t.Fatalf("expected one attachment discovery call, got %d", provider.attachmentCalls["shared-project"])
+	}
+	if provider.routerCalls["shared-project"] != 1 {
+		t.Fatalf("expected one router discovery call, got %d", provider.routerCalls["shared-project"])
+	}
+	if provider.statusCalls["shared-project/us-central1/router-shared"] != 1 {
+		t.Fatalf("expected one router status call, got %d", provider.statusCalls["shared-project/us-central1/router-shared"])
+	}
+
+	statusOutput := status.String()
+	if !strings.Contains(statusOutput, "⏳ Completed org=dbc workload=native environment=dev project=shared-project") {
+		t.Fatalf("expected native/dev completion status, got: %s", statusOutput)
+	}
+	if !strings.Contains(statusOutput, "⏳ Completed org=dbc workload=platform environment=dev project=shared-project") {
+		t.Fatalf("expected platform/dev completion status, got: %s", statusOutput)
+	}
+}
+
 const validConfig = `
 org:
   - name: dbc
@@ -408,4 +541,18 @@ org:
             project_id: project-a
           - name: prod
             project_id: project-b
+`
+
+const duplicateProjectConfig = `
+org:
+  - name: dbc
+    workload:
+      - name: native
+        env:
+          - name: dev
+            project_id: shared-project
+      - name: platform
+        env:
+          - name: dev
+            project_id: shared-project
 `
