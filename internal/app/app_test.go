@@ -173,7 +173,7 @@ func TestRunWritesMermaidByDefault(t *testing.T) {
 		t.Fatalf("expected mermaid output file to be written")
 	}
 	content := string(data)
-	if !strings.Contains(content, "flowchart LR") || !strings.Contains(content, "peer-1") || !strings.Contains(content, "if: if-1") {
+	if !strings.Contains(content, "flowchart LR") || !strings.Contains(content, "remote_bgp_peer: peer-1") || !strings.Contains(content, "dst_cloud_router_interface: if-1") {
 		t.Fatalf("unexpected mermaid content: %s", content)
 	}
 }

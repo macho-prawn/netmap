@@ -236,16 +236,19 @@ func (a *App) buildInterconnectReport(ctx context.Context, opts Options, dstProj
 		if items[i].DstProject != items[j].DstProject {
 			return items[i].DstProject < items[j].DstProject
 		}
-		if items[i].Region != items[j].Region {
-			return items[i].Region < items[j].Region
+		if items[i].DstRegion != items[j].DstRegion {
+			return items[i].DstRegion < items[j].DstRegion
 		}
-		if items[i].Attachment != items[j].Attachment {
-			return items[i].Attachment < items[j].Attachment
+		if items[i].DstVLANAttachment != items[j].DstVLANAttachment {
+			return items[i].DstVLANAttachment < items[j].DstVLANAttachment
 		}
-		if items[i].Router != items[j].Router {
-			return items[i].Router < items[j].Router
+		if items[i].DstCloudRouter != items[j].DstCloudRouter {
+			return items[i].DstCloudRouter < items[j].DstCloudRouter
 		}
-		return items[i].Interface < items[j].Interface
+		if items[i].DstCloudRouterInterface != items[j].DstCloudRouterInterface {
+			return items[i].DstCloudRouterInterface < items[j].DstCloudRouterInterface
+		}
+		return items[i].RemoteBGPPeer < items[j].RemoteBGPPeer
 	})
 
 	destinationProject := ""
@@ -304,19 +307,19 @@ func buildMappingItems(srcProject, dstProject string, interconnects []model.Dedi
 				peers := peersByInterface[iface.Name]
 				if len(peers) == 0 {
 					item := baseItem(srcProject, dstProject, interconnect, attachment, router)
-					item.Interface = iface.Name
-					item.LocalIP = iface.IPRange
-					item.BGPStatus = "unknown"
+					item.DstCloudRouterInterface = iface.Name
+					item.DstCloudRouterInterfaceIP = iface.IPRange
+					item.BGPPeeringStatus = "unknown"
 					items = append(items, item)
 					continue
 				}
 				for _, peer := range peers {
 					item := baseItem(srcProject, dstProject, interconnect, attachment, router)
-					item.Interface = iface.Name
-					item.BGPPeerName = peer.Name
-					item.LocalIP = firstNonEmpty(peer.LocalIP, iface.IPRange)
-					item.RemoteIP = peer.RemoteIP
-					item.BGPStatus = firstNonEmpty(peer.SessionState, "unknown")
+					item.DstCloudRouterInterface = iface.Name
+					item.DstCloudRouterInterfaceIP = firstNonEmpty(peer.LocalIP, iface.IPRange)
+					item.RemoteBGPPeer = peer.Name
+					item.RemoteBGPPeerIP = peer.RemoteIP
+					item.BGPPeeringStatus = firstNonEmpty(peer.SessionState, "unknown")
 					items = append(items, item)
 				}
 			}
@@ -327,16 +330,18 @@ func buildMappingItems(srcProject, dstProject string, interconnects []model.Dedi
 
 func baseItem(srcProject, dstProject string, interconnect model.DedicatedInterconnect, attachment model.VLANAttachment, router model.CloudRouter) model.MappingItem {
 	return model.MappingItem{
-		SrcProject:      srcProject,
-		SrcInterconnect: interconnect.Name,
-		SrcRegion:       "global",
-		SrcState:        interconnect.State,
-		DstProject:      dstProject,
-		Region:          attachment.Region,
-		Attachment:      attachment.Name,
-		AttachmentState: attachment.State,
-		Router:          router.Name,
-		Mapped:          true,
+		SrcProject:              srcProject,
+		SrcInterconnect:         interconnect.Name,
+		Mapped:                  true,
+		SrcRegion:               "global",
+		SrcState:                interconnect.State,
+		DstProject:              dstProject,
+		DstRegion:               attachment.Region,
+		DstVLANAttachment:       attachment.Name,
+		DstVLANAttachmentState:  attachment.State,
+		DstVLANAttachmentVLANID: attachment.VLANID,
+		DstCloudRouter:          router.Name,
+		DstCloudRouterState:     firstNonEmpty(router.State, "unknown"),
 	}
 }
 
