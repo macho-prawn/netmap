@@ -43,7 +43,9 @@ Selector expansion is:
 ./netmap version
 ```
 
-This prints the embedded CLI version, currently `1.0.0`.
+This prints the embedded CLI version, currently `1.0.1`.
+
+Running `./netmap` or `./netmap -h` prints the help menu without requiring ADC credentials.
 
 ## Run Without Building
 
@@ -75,8 +77,8 @@ GOCACHE=/tmp/go-build-cache /usr/local/go/bin/go run ./cmd/netmap \
 
 ## Release
 
-- `VERSION` is the release source of truth and currently contains `1.0.0`
-- The release workflow prepends `v` when creating and checking release tags, so `VERSION=1.0.0` produces release tag `v1.0.0`
+- `VERSION` is the release source of truth and currently contains `1.0.1`
+- The release workflow prepends `v` when creating and checking release tags, so `VERSION=1.0.1` produces release tag `v1.0.1`
 - PR validation runs in workflow `NetMap Test` from `.github/workflows/netmap-test.yml`
 - Release publishing runs in workflow `NetMap Release` from `.github/workflows/netmap-release.yml`
 - The GitHub Actions job labels are:

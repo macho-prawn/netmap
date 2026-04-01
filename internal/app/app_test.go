@@ -81,7 +81,7 @@ func TestParseOptionsValidation(t *testing.T) {
 		args []string
 		want string
 	}{
-		{name: "missing t", args: []string{}, want: "missing mandatory parameter -t"},
+		{name: "missing t", args: []string{"-o", "dbc"}, want: "missing mandatory parameter -t"},
 		{name: "invalid t", args: []string{"-t", "bad", "-o", "dbc"}, want: "invalid -t value"},
 		{name: "missing o", args: []string{"-t", "interconnect", "-p", "src"}, want: "missing mandatory parameter -o"},
 		{name: "missing p for interconnect", args: []string{"-t", "interconnect", "-o", "dbc"}, want: "missing mandatory parameter -p"},
@@ -96,6 +96,16 @@ func TestParseOptionsValidation(t *testing.T) {
 				t.Fatalf("expected error containing %q, got %v", tc.want, err)
 			}
 		})
+	}
+}
+
+func TestParseOptionsWithoutArgsShowsHelp(t *testing.T) {
+	opts, err := ParseOptions(nil)
+	if err != nil {
+		t.Fatalf("parse options: %v", err)
+	}
+	if !opts.ShowHelp || !strings.Contains(opts.Usage, "Usage:") {
+		t.Fatalf("expected help usage, got %+v", opts)
 	}
 }
 
@@ -119,6 +129,9 @@ func TestParseOptionsHelp(t *testing.T) {
 	}
 	if !strings.Contains(opts.Usage, "Selector Expansion:") {
 		t.Fatalf("expected selector expansion guidance, got %+v", opts)
+	}
+	if !strings.Contains(opts.Usage, "netmap\n  netmap version") {
+		t.Fatalf("expected bare command and version usage, got %+v", opts)
 	}
 	if !strings.Contains(opts.Usage, "-o + -e        expands all workloads containing that environment") {
 		t.Fatalf("expected explicit -o + -e help text, got %+v", opts)
