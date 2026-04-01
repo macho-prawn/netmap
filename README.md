@@ -37,6 +37,14 @@ Selector expansion is:
 /usr/local/go/bin/go build ./cmd/netmap
 ```
 
+## Version
+
+```bash
+./netmap version
+```
+
+This prints the embedded CLI version, currently `1.0.0`.
+
 ## Run Without Building
 
 ```bash
@@ -68,6 +76,12 @@ GOCACHE=/tmp/go-build-cache /usr/local/go/bin/go run ./cmd/netmap \
 ## Release
 
 - `VERSION` is the release source of truth and currently contains `1.0.0`
+- The release workflow prepends `v` when creating and checking release tags, so `VERSION=1.0.0` produces release tag `v1.0.0`
+- PR validation runs in workflow `NetMap Test` from `.github/workflows/netmap-test.yml`
+- Release publishing runs in workflow `NetMap Release` from `.github/workflows/netmap-release.yml`
+- The GitHub Actions job labels are:
+  - `Code Test`
+  - `Build and Release`
 - Pull requests targeting `main` run `go test ./...` when changes land under `cmd/` or `internal/`
 - Pull request checks are the only test gate; the release workflow does not re-run tests after merge
 - The release workflow runs only after the pull request is merged into `main`
@@ -76,7 +90,7 @@ GOCACHE=/tmp/go-build-cache /usr/local/go/bin/go run ./cmd/netmap \
   - `netmap_<version>_darwin_amd64.tar.gz`
   - `netmap_<version>_windows_amd64.zip`
 - Each archive contains only `README.md` and the platform binary
-- `CHANGELOG.md` contains the detailed release history for shipped versions
+- `CHANGELOG.md` contains the detailed release history for shipped versions and is used as the GitHub release notes source
 
 ## Usage
 

@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   build-release:
+    name: Build and Release
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
@@ -46,15 +47,16 @@ jobs:
           fi
 
           echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
 
       - name: Fail if release already exists
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.value }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         shell: bash
         run: |
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release $VERSION already exists" >&2
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists" >&2
             exit 1
           fi
 
@@ -84,10 +86,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.value }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         shell: bash
         run: |
-          gh release create "$VERSION" \
+          gh release create "$RELEASE_TAG" \
             dist/netmap_"$VERSION"_darwin_amd64.tar.gz \
             dist/netmap_"$VERSION"_windows_amd64.zip \
-            --title "netmap $VERSION" \
-            --notes "Release $VERSION"
+            --notes-file CHANGELOG.md
