@@ -194,6 +194,7 @@ func ParseOptions(args []string) (Options, error) {
 func usageText() string {
 	return strings.TrimSpace(`
 Usage:
+  netmap version
   netmap -t interconnect -o <org> [-w <workload>] [-e <env>] -p <src-project> [-f <format>] [-config <path>]
   netmap -t vpn -o <org> [-w <workload>] [-e <env>] [-f <format>] [-config <path>]
 
@@ -206,6 +207,9 @@ Flags:
   -f        optional, output format override: csv, tsv, json, or tree
   -config   optional, defaults to config.yaml
   -h        optional, print usage
+
+Commands:
+  version   print the current netmap version and exit
 
 Selector Expansion:
   -o only        expands all workloads and environments under that org

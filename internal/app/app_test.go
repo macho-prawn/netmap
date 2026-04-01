@@ -126,6 +126,9 @@ func TestParseOptionsHelp(t *testing.T) {
 	if !strings.Contains(opts.Usage, "Omit -f to write Mermaid output by default.") {
 		t.Fatalf("expected default mermaid guidance, got %+v", opts)
 	}
+	if !strings.Contains(opts.Usage, "netmap version") || !strings.Contains(opts.Usage, "print the current netmap version and exit") {
+		t.Fatalf("expected version command help text, got %+v", opts)
+	}
 	if !strings.Contains(opts.Usage, "Mermaid output can be viewed in https://mermaid.live") {
 		t.Fatalf("expected mermaid.live guidance, got %+v", opts)
 	}
