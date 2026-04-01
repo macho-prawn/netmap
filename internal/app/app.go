@@ -156,6 +156,14 @@ func ParseOptions(args []string) (Options, error) {
 		fmt.Fprint(&usage, usageText())
 	}
 
+	if len(args) == 0 {
+		fs.Usage()
+		return Options{
+			ShowHelp: true,
+			Usage:    usage.String(),
+		}, nil
+	}
+
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return Options{
@@ -194,6 +202,7 @@ func ParseOptions(args []string) (Options, error) {
 func usageText() string {
 	return strings.TrimSpace(`
 Usage:
+  netmap
   netmap version
   netmap -t interconnect -o <org> [-w <workload>] [-e <env>] -p <src-project> [-f <format>] [-config <path>]
   netmap -t vpn -o <org> [-w <workload>] [-e <env>] [-f <format>] [-config <path>]
