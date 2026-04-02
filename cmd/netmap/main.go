@@ -29,13 +29,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 
-	opts, err := app.ParseOptions(args)
+	files := app.RealFileStore{}
+
+	input, err := app.Validate(files, args)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	if opts.ShowHelp {
-		fmt.Fprint(stdout, opts.Usage)
+	if input.Options.ShowHelp {
+		fmt.Fprint(stdout, input.Options.Usage)
 		return 0
 	}
 
@@ -46,7 +48,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	cli, err := app.New(
-		app.RealFileStore{},
+		files,
 		discovery,
 	)
 	if err != nil {
@@ -54,7 +56,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if err := cli.Run(ctx, args); err != nil {
+	if err := cli.RunValidated(ctx, input); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}

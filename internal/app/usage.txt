@@ -1,0 +1,37 @@
+Usage:
+
+  netmap [-h]
+  netmap version
+  netmap -t interconnect -o <org> [-w <workload>] [-e <env>] -p <src-project> [-f <format>] [-c <path>]
+  netmap -t vpn -o <org> [-w <workload>] [-e <env>] [-f <format>] [-c <path>]
+
+Flags:
+  -t        mandatory, accepts interconnect or vpn
+  -o        mandatory, org lookup key from the YAML config
+  -w        optional, workload selector; with -o and no -e, expands all environments in that workload
+  -e        optional, environment selector; with -o and no -w, expands all workloads containing that environment
+  -p        mandatory only for -t interconnect; source project containing dedicated interconnects
+  -f        optional, output format override: html, csv, tsv, json, or tree
+  -c        optional, defaults to config.yaml
+  -h        optional, print usage
+
+Commands:
+  version   print the current netmap version and exit
+
+Selector Expansion:
+  -o only        expands all workloads and environments under that org
+  -o + -w        expands all environments under that workload
+  -o + -e        expands all workloads containing that environment
+  -o + -w + -e   resolves one exact workload/environment tuple
+
+Output:
+  Omit -f to write Mermaid output by default.
+  HTML output file:    netmap-interconnect-<src>-to-<dst>-<timestamp>.html
+  Mermaid output file: netmap-interconnect-<src>-to-<dst>-<timestamp>.mmd
+  CSV output file:     netmap-interconnect-<src>-to-<dst>-<timestamp>.csv
+  TSV output file:     netmap-interconnect-<src>-to-<dst>-<timestamp>.tsv
+  JSON output file:    netmap-interconnect-<src>-to-<dst>-<timestamp>.json
+  Tree output file:    netmap-interconnect-<src>-to-<dst>-<timestamp>.tree.txt
+  Org fanout output:   netmap-interconnect-<src>-to-<org>-all-<timestamp>.<ext>
+
+  Use -f html to write a self-contained offline Mermaid viewer page.
