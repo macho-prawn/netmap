@@ -193,7 +193,7 @@ func TestRenderMermaidCollapsesSharedProjectAndRegion(t *testing.T) {
 		t.Fatalf("expected destination fanout details, got %s", content)
 	}
 	if !strings.Contains(content, "<br>") {
-		t.Fatalf("expected mermaid.live-compatible line breaks, got %s", content)
+		t.Fatalf("expected mermaid-compatible line breaks, got %s", content)
 	}
 	if strings.Contains(content, "\\n") {
 		t.Fatalf("unexpected escaped newline in mermaid output: %s", content)
@@ -233,6 +233,32 @@ func TestRenderMermaidCollapsesSharedProjectAndRegion(t *testing.T) {
 	}
 	if countSubstring(content, "src_interconnect: ic-1") != 1 {
 		t.Fatalf("expected one shared ic-1 node, got %d in %s", countSubstring(content, "src_interconnect: ic-1"), content)
+	}
+}
+
+func TestRenderHTML(t *testing.T) {
+	data, ext, err := Render(sampleReport(), FormatHTML)
+	if err != nil {
+		t.Fatalf("render html: %v", err)
+	}
+	if ext != "html" {
+		t.Fatalf("expected html extension, got %q", ext)
+	}
+	content := string(data)
+	if !strings.Contains(content, "<!DOCTYPE html>") {
+		t.Fatalf("expected html doctype, got %s", content)
+	}
+	if !strings.Contains(content, "flowchart LR") || !strings.Contains(content, "remote_bgp_peer: peer-1") {
+		t.Fatalf("expected embedded mermaid graph source, got %s", content)
+	}
+	if !strings.Contains(content, "mermaid.initialize") || !strings.Contains(content, "mermaid.run") {
+		t.Fatalf("expected embedded mermaid bootstrap, got %s", content)
+	}
+	if !strings.Contains(content, "The MIT License (MIT)") {
+		t.Fatalf("expected embedded mermaid license notice, got %s", content)
+	}
+	if strings.Contains(content, "cdn.jsdelivr.net") || strings.Contains(content, "https://mermaid.live") {
+		t.Fatalf("expected offline html without external mermaid references, got %s", content)
 	}
 }
 

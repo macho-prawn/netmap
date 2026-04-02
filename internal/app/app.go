@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"errors"
 	"flag"
 	"fmt"
@@ -62,6 +63,11 @@ type Options struct {
 	Usage         string
 }
 
+type ValidatedInput struct {
+	Options Options
+	Targets []config.ResolvedTarget
+}
+
 func New(files FileStore, discovery provider.DiscoveryProvider) (*App, error) {
 	if files == nil {
 		return nil, errors.New("file store is required")
@@ -78,33 +84,29 @@ func New(files FileStore, discovery provider.DiscoveryProvider) (*App, error) {
 }
 
 func (a *App) Run(ctx context.Context, args []string) error {
-	opts, err := ParseOptions(args)
+	input, err := Validate(a.files, args)
 	if err != nil {
 		return err
 	}
+	if input.Options.ShowHelp {
+		fmt.Fprint(os.Stdout, input.Options.Usage)
+		return nil
+	}
+	return a.RunValidated(ctx, input)
+}
+
+func (a *App) RunValidated(ctx context.Context, input ValidatedInput) error {
+	opts := input.Options
+	targets := input.Targets
+
 	if opts.ShowHelp {
 		fmt.Fprint(os.Stdout, opts.Usage)
 		return nil
 	}
 
-	cfgData, err := a.files.ReadFile(opts.ConfigPath)
-	if err != nil {
-		return fmt.Errorf("read config %q: %w", opts.ConfigPath, err)
-	}
-
-	cfg, err := config.Parse(cfgData)
-	if err != nil {
-		return err
-	}
-
-	targets, err := cfg.ResolveTargets(opts.Org, opts.Workload, opts.Environment)
-	if err != nil {
-		return err
-	}
-	projectIDs := uniqueProjectIDs(targets)
-
 	if opts.Type == TypeVPN {
 		scope := "selected destination projects"
+		projectIDs := uniqueProjectIDs(targets)
 		if len(projectIDs) == 1 {
 			scope = fmt.Sprintf("destination project %q", projectIDs[0])
 		}
@@ -139,6 +141,40 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	return nil
 }
 
+func Validate(files FileStore, args []string) (ValidatedInput, error) {
+	if files == nil {
+		return ValidatedInput{}, errors.New("file store is required")
+	}
+
+	opts, err := ParseOptions(args)
+	if err != nil {
+		return ValidatedInput{}, err
+	}
+	if opts.ShowHelp {
+		return ValidatedInput{Options: opts}, nil
+	}
+
+	cfgData, err := files.ReadFile(opts.ConfigPath)
+	if err != nil {
+		return ValidatedInput{}, fmt.Errorf("read config %q: %w", opts.ConfigPath, err)
+	}
+
+	cfg, err := config.Parse(cfgData)
+	if err != nil {
+		return ValidatedInput{}, err
+	}
+
+	targets, err := cfg.ResolveTargets(opts.Org, opts.Workload, opts.Environment)
+	if err != nil {
+		return ValidatedInput{}, err
+	}
+
+	return ValidatedInput{
+		Options: opts,
+		Targets: targets,
+	}, nil
+}
+
 func ParseOptions(args []string) (Options, error) {
 	fs := flag.NewFlagSet("netmap", flag.ContinueOnError)
 	var usage bytes.Buffer
@@ -150,7 +186,7 @@ func ParseOptions(args []string) (Options, error) {
 	fs.StringVar(&opts.Workload, "w", "", "workload selector")
 	fs.StringVar(&opts.Environment, "e", "", "environment selector")
 	fs.StringVar(&opts.SourceProject, "p", "", "source project for interconnect discovery")
-	fs.StringVar(&opts.Format, "f", "", "optional output format: csv, tsv, json, tree")
+	fs.StringVar(&opts.Format, "f", "", "optional output format: html, csv, tsv, json, tree")
 	fs.StringVar(&opts.ConfigPath, "c", "config.yaml", "config path")
 	fs.Usage = func() {
 		fmt.Fprint(&usage, usageText())
@@ -191,54 +227,18 @@ func ParseOptions(args []string) (Options, error) {
 	}
 
 	switch opts.Format {
-	case "", render.FormatCSV, render.FormatTSV, render.FormatJSON, render.FormatTree:
+	case "", render.FormatHTML, render.FormatCSV, render.FormatTSV, render.FormatJSON, render.FormatTree:
 	default:
-		return Options{}, fmt.Errorf("invalid -f value %q, expected csv, tsv, json, or tree", opts.Format)
+		return Options{}, fmt.Errorf("invalid -f value %q, expected html, csv, tsv, json, or tree", opts.Format)
 	}
 
 	return opts, nil
 }
 
-func usageText() string {
-	return strings.TrimSpace(`
-Usage:
+//go:embed usage.txt
+var usageTextContent string
 
-  netmap [-h]
-  netmap version
-  netmap -t interconnect -o <org> [-w <workload>] [-e <env>] -p <src-project> [-f <format>] [-c <path>]
-  netmap -t vpn -o <org> [-w <workload>] [-e <env>] [-f <format>] [-c <path>]
-
-Flags:
-  -t        mandatory, accepts interconnect or vpn
-  -o        mandatory, org lookup key from the YAML config
-  -w        optional, workload selector; with -o and no -e, expands all environments in that workload
-  -e        optional, environment selector; with -o and no -w, expands all workloads containing that environment
-  -p        mandatory only for -t interconnect; source project containing dedicated interconnects
-  -f        optional, output format override: csv, tsv, json, or tree
-  -c        optional, defaults to config.yaml
-  -h        optional, print usage
-
-Commands:
-  version   print the current netmap version and exit
-
-Selector Expansion:
-  -o only        expands all workloads and environments under that org
-  -o + -w        expands all environments under that workload
-  -o + -e        expands all workloads containing that environment
-  -o + -w + -e   resolves one exact workload/environment tuple
-
-Output:
-  Omit -f to write Mermaid output by default.
-  Mermaid output file: netmap-interconnect-<src>-to-<dst>-<timestamp>.mmd
-  CSV output file:     netmap-interconnect-<src>-to-<dst>-<timestamp>.csv
-  TSV output file:     netmap-interconnect-<src>-to-<dst>-<timestamp>.tsv
-  JSON output file:    netmap-interconnect-<src>-to-<dst>-<timestamp>.json
-  Tree output file:    netmap-interconnect-<src>-to-<dst>-<timestamp>.tree.txt
-  Org fanout output:   netmap-interconnect-<src>-to-<org>-all-<timestamp>.<ext>
-
-  Mermaid output can be viewed in https://mermaid.live
-`) + "\n"
-}
+func usageText() string { return usageTextContent }
 
 func (a *App) buildInterconnectReport(ctx context.Context, opts Options, targets []config.ResolvedTarget) (model.Report, error) {
 	interconnects, err := a.provider.ListDedicatedInterconnects(ctx, opts.SourceProject)

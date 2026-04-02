@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -156,8 +157,14 @@ func TestParseOptionsHelp(t *testing.T) {
 	if !strings.Contains(opts.Usage, "Omit -f to write Mermaid output by default.") {
 		t.Fatalf("expected default mermaid guidance, got %+v", opts)
 	}
+	if !strings.Contains(opts.Usage, "HTML output file:    netmap-interconnect-<src>-to-<dst>-<timestamp>.html") {
+		t.Fatalf("expected html output guidance, got %+v", opts)
+	}
 	if !strings.Contains(opts.Usage, "-c        optional, defaults to config.yaml") || strings.Contains(opts.Usage, "-config") {
 		t.Fatalf("expected short config flag help text, got %+v", opts)
+	}
+	if !strings.Contains(opts.Usage, "-f        optional, output format override: html, csv, tsv, json, or tree") {
+		t.Fatalf("expected html in format help text, got %+v", opts)
 	}
 	if !strings.Contains(opts.Usage, "netmap version") || !strings.Contains(opts.Usage, "print the current netmap version and exit") {
 		t.Fatalf("expected version command help text, got %+v", opts)
@@ -165,11 +172,18 @@ func TestParseOptionsHelp(t *testing.T) {
 	if strings.Contains(opts.Usage, "Stderr shows an ASCII 2-column task table") || strings.Contains(opts.Usage, "Completed rows use a tick marker") || strings.Contains(opts.Usage, "The final merged row prints Output: <path> and Total Time: <duration>.") {
 		t.Fatalf("expected simplified output section, got %+v", opts)
 	}
-	if !strings.Contains(opts.Usage, "Org fanout output:   netmap-interconnect-<src>-to-<org>-all-<timestamp>.<ext>\n\n  Mermaid output can be viewed in https://mermaid.live") {
-		t.Fatalf("expected blank line before mermaid viewer note, got %+v", opts)
+	if !strings.Contains(opts.Usage, "Org fanout output:   netmap-interconnect-<src>-to-<org>-all-<timestamp>.<ext>\n\n  Use -f html to write a self-contained offline Mermaid viewer page.") {
+		t.Fatalf("expected blank line before html viewer note, got %+v", opts)
 	}
-	if !strings.Contains(opts.Usage, "Mermaid output can be viewed in https://mermaid.live") {
-		t.Fatalf("expected mermaid.live guidance, got %+v", opts)
+}
+
+func TestUsageTextMatchesEmbeddedSourceFile(t *testing.T) {
+	data, err := os.ReadFile("usage.txt")
+	if err != nil {
+		t.Fatalf("read usage.txt: %v", err)
+	}
+	if usageText() != string(data) {
+		t.Fatalf("expected embedded usage text to match usage.txt")
 	}
 }
 
@@ -254,7 +268,7 @@ func TestRunWritesMermaidByDefault(t *testing.T) {
 		t.Fatalf("unexpected mermaid content: %s", content)
 	}
 	if !strings.Contains(content, "<br>") || strings.Contains(content, "\\n") {
-		t.Fatalf("expected mermaid.live-compatible line breaks, got: %s", content)
+		t.Fatalf("expected mermaid-compatible line breaks, got: %s", content)
 	}
 	if !strings.Contains(content, "src_macsec_enabled: true") || !strings.Contains(content, "src_macsec_keyname: macsec-key-a") {
 		t.Fatalf("unexpected mermaid content: %s", content)
@@ -331,6 +345,98 @@ func TestRunSuppressesMermaidWhenFormatProvided(t *testing.T) {
 		t.Fatalf("expected json output")
 	}
 	if !strings.Contains(status.String(), "Output: netmap-interconnect-src-project-to-project-20260328T000000Z.json") || !strings.Contains(status.String(), "Total Time: 0s") {
+		t.Fatalf("expected final summary row, got: %s", status.String())
+	}
+}
+
+func TestRunWritesOfflineHTMLWhenFormatProvided(t *testing.T) {
+	store := &memoryFileStore{
+		files: map[string][]byte{
+			"config.yaml": []byte(validConfig),
+		},
+	}
+	app, err := New(store, mockProvider{
+		interconnects: []model.DedicatedInterconnect{{
+			Name:          "ic-1",
+			State:         "ACTIVE",
+			MacsecEnabled: true,
+			MacsecKeyName: "macsec-key-a",
+		}},
+		attachments: []model.VLANAttachment{{
+			Name:         "attachment-1",
+			Region:       "us-central1",
+			Network:      "vpc-a",
+			State:        "ACTIVE",
+			Interconnect: "ic-1",
+			Router:       "router-1",
+		}},
+		routers: []model.CloudRouter{{
+			Name:   "router-1",
+			Region: "us-central1",
+			ASN:    "64512",
+			Interfaces: []model.RouterInterface{{
+				Name:                     "if-1",
+				LinkedInterconnectAttach: "attachment-1",
+				IPRange:                  "169.254.1.1/30",
+			}},
+			BGPPeers: []model.BGPPeer{{
+				Name:         "peer-1",
+				Interface:    "if-1",
+				LocalIP:      "169.254.1.1",
+				RemoteIP:     "169.254.1.2",
+				PeerASN:      "64550",
+				SessionState: "UP",
+			}},
+		}},
+		statuses: map[string]model.RouterStatus{
+			"us-central1/router-1": {
+				RouterName: "router-1",
+				Region:     "us-central1",
+				Peers: []model.BGPPeerStatus{{
+					Name:         "peer-1",
+					LocalIP:      "169.254.1.1",
+					RemoteIP:     "169.254.1.2",
+					SessionState: "UP",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.now = func() time.Time {
+		return time.Date(2026, time.March, 28, 0, 0, 0, 0, time.UTC)
+	}
+	var status bytes.Buffer
+	app.status = &status
+
+	err = app.Run(context.Background(), []string{
+		"-t", "interconnect",
+		"-o", "dbc",
+		"-w", "native",
+		"-e", "dev",
+		"-p", "src-project",
+		"-f", "html",
+	})
+	if err != nil {
+		t.Fatalf("run app: %v", err)
+	}
+
+	if _, ok := store.files["netmap-interconnect-src-project-to-project-20260328T000000Z.mmd"]; ok {
+		t.Fatalf("unexpected mermaid output")
+	}
+	data, ok := store.files["netmap-interconnect-src-project-to-project-20260328T000000Z.html"]
+	if !ok {
+		t.Fatalf("expected html output")
+	}
+	content := string(data)
+	if !strings.Contains(content, "<!DOCTYPE html>") || !strings.Contains(content, "flowchart LR") || !strings.Contains(content, "mermaid.initialize") {
+		t.Fatalf("expected offline mermaid html output, got: %s", content)
+	}
+	if strings.Contains(content, "https://mermaid.live") {
+		t.Fatalf("expected offline html output without external viewer guidance, got: %s", content)
+	}
+	if !strings.Contains(status.String(), "Output: netmap-interconnect-src-project-to-project-20260328T000000Z.html") || !strings.Contains(status.String(), "Total Time: 0s") {
 		t.Fatalf("expected final summary row, got: %s", status.String())
 	}
 }

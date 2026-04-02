@@ -13,6 +13,7 @@ import (
 
 const (
 	FormatMermaid = "mermaid"
+	FormatHTML    = "html"
 	FormatCSV     = "csv"
 	FormatTSV     = "tsv"
 	FormatJSON    = "json"
@@ -50,6 +51,9 @@ func Render(report model.Report, format string) ([]byte, string, error) {
 	switch format {
 	case "", FormatMermaid:
 		return renderMermaid(report), "mmd", nil
+	case FormatHTML:
+		data, err := renderHTML(report)
+		return data, "html", err
 	case FormatCSV:
 		data, err := renderSeparated(report, ',')
 		return data, "csv", err
