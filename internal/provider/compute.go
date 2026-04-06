@@ -76,12 +76,13 @@ func (p *ComputeProvider) ListVPNGateways(ctx context.Context, project string) (
 					continue
 				}
 				items = append(items, model.VPNGateway{
-					Name:     gateway.Name,
-					Region:   basename(gateway.Region),
-					Network:  basename(gateway.Network),
-					Type:     "ha",
-					Status:   "",
-					SelfLink: gateway.SelfLink,
+					Name:            gateway.Name,
+					Region:          basename(gateway.Region),
+					Network:         basename(gateway.Network),
+					Type:            "ha",
+					Status:          "",
+					SelfLink:        gateway.SelfLink,
+					InterfaceIPByID: haVPNGatewayInterfaceIPs(gateway),
 				})
 			}
 		}
@@ -93,6 +94,11 @@ func (p *ComputeProvider) ListVPNGateways(ctx context.Context, project string) (
 }
 
 func (p *ComputeProvider) ListTargetVPNGateways(ctx context.Context, project string) ([]model.VPNGateway, error) {
+	forwardingRuleIPs, err := p.listForwardingRuleIPsByURL(ctx, project)
+	if err != nil {
+		return nil, err
+	}
+
 	var items []model.VPNGateway
 	call := p.service.TargetVpnGateways.AggregatedList(project).Context(ctx)
 	if err := call.Pages(ctx, func(page *compute.TargetVpnGatewayAggregatedList) error {
@@ -102,12 +108,13 @@ func (p *ComputeProvider) ListTargetVPNGateways(ctx context.Context, project str
 					continue
 				}
 				items = append(items, model.VPNGateway{
-					Name:     gateway.Name,
-					Region:   basename(gateway.Region),
-					Network:  basename(gateway.Network),
-					Type:     "classic",
-					Status:   firstNonEmpty(gateway.Status),
-					SelfLink: gateway.SelfLink,
+					Name:            gateway.Name,
+					Region:          basename(gateway.Region),
+					Network:         basename(gateway.Network),
+					Type:            "classic",
+					Status:          firstNonEmpty(gateway.Status),
+					SelfLink:        gateway.SelfLink,
+					InterfaceIPByID: classicVPNGatewayInterfaceIPs(gateway, forwardingRuleIPs),
 				})
 			}
 		}
@@ -116,6 +123,27 @@ func (p *ComputeProvider) ListTargetVPNGateways(ctx context.Context, project str
 		return nil, fmt.Errorf("list target vpn gateways for source project %q: %w", project, err)
 	}
 	return items, nil
+}
+
+func (p *ComputeProvider) listForwardingRuleIPsByURL(ctx context.Context, project string) (map[string]string, error) {
+	result := make(map[string]string)
+	call := p.service.ForwardingRules.AggregatedList(project).Context(ctx)
+	if err := call.Pages(ctx, func(page *compute.ForwardingRuleAggregatedList) error {
+		for _, scoped := range page.Items {
+			for _, rule := range scoped.ForwardingRules {
+				if rule == nil {
+					continue
+				}
+				if strings.TrimSpace(rule.SelfLink) != "" {
+					result[strings.TrimSpace(rule.SelfLink)] = strings.TrimSpace(rule.IPAddress)
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("list forwarding rules for target vpn gateways in project %q: %w", project, err)
+	}
+	return result, nil
 }
 
 func (p *ComputeProvider) ListVPNTunnels(ctx context.Context, project string) ([]model.VPNTunnel, error) {
@@ -250,6 +278,46 @@ func formatOptionalInt(value int64) string {
 		return ""
 	}
 	return strconv.FormatInt(value, 10)
+}
+
+func haVPNGatewayInterfaceIPs(gateway *compute.VpnGateway) map[string]string {
+	if gateway == nil || len(gateway.VpnInterfaces) == 0 {
+		return nil
+	}
+	result := make(map[string]string)
+	for _, iface := range gateway.VpnInterfaces {
+		if iface == nil {
+			continue
+		}
+		id := formatOptionalInt(iface.Id)
+		ip := firstNonEmpty(strings.TrimSpace(iface.IpAddress), strings.TrimSpace(iface.Ipv6Address))
+		if id == "" || ip == "" {
+			continue
+		}
+		result[id] = ip
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func classicVPNGatewayInterfaceIPs(gateway *compute.TargetVpnGateway, forwardingRuleIPs map[string]string) map[string]string {
+	if gateway == nil || len(gateway.ForwardingRules) == 0 {
+		return nil
+	}
+	result := make(map[string]string)
+	for idx, ruleURL := range gateway.ForwardingRules {
+		ip := strings.TrimSpace(forwardingRuleIPs[strings.TrimSpace(ruleURL)])
+		if ip == "" {
+			continue
+		}
+		result[strconv.Itoa(idx)] = ip
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
 }
 
 func selectActiveMacsecKeyName(now time.Time, macsec *compute.InterconnectMacsec) string {

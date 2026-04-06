@@ -624,6 +624,9 @@ func TestRunWritesVPNMermaidByDefault(t *testing.T) {
 				Type:     "ha",
 				Status:   "unknown",
 				SelfLink: "https://www.googleapis.com/compute/v1/projects/project/regions/us-central1/vpnGateways/ha-src",
+				InterfaceIPByID: map[string]string{
+					"0": "34.0.0.1",
+				},
 			}},
 			"peer-project": {{
 				Name:     "ha-dst",
@@ -632,6 +635,9 @@ func TestRunWritesVPNMermaidByDefault(t *testing.T) {
 				Type:     "ha",
 				Status:   "unknown",
 				SelfLink: "https://www.googleapis.com/compute/v1/projects/peer-project/regions/us-central1/vpnGateways/ha-dst",
+				InterfaceIPByID: map[string]string{
+					"0": "35.0.0.1",
+				},
 			}},
 		},
 		vpnTunnelsByProject: map[string][]model.VPNTunnel{
@@ -722,6 +728,9 @@ func TestRunWritesVPNMermaidByDefault(t *testing.T) {
 	if projectItems[0].SrcCloudRouter != "router-src" || projectItems[0].SrcCloudRouterInterface != "if-src" || projectItems[0].SrcCloudRouterInterfaceIP != "169.254.1.1/30" {
 		t.Fatalf("expected source router fields in vpn project item, got %+v", projectItems[0])
 	}
+	if projectItems[0].SrcVPNGatewayInterface != "0" || projectItems[0].DstVPNGatewayInterface != "0" || projectItems[0].SrcVPNGatewayIP != "34.0.0.1" || projectItems[0].DstVPNGatewayIP != "35.0.0.1" {
+		t.Fatalf("expected vpn gateway interface/ip fields in vpn project item, got %+v", projectItems[0])
+	}
 
 	err = app.Run(context.Background(), []string{
 		"-t", "vpn",
@@ -740,6 +749,9 @@ func TestRunWritesVPNMermaidByDefault(t *testing.T) {
 	content := string(data)
 	if !strings.Contains(content, "src_vpn_gateway: ha-src") || !strings.Contains(content, "src_vpn_tunnel: tunnel-src") {
 		t.Fatalf("expected vpn source nodes in mermaid output, got: %s", content)
+	}
+	if !strings.Contains(content, "src_vpn_gateway_interface: 0") || !strings.Contains(content, "dst_vpn_gateway_interface: 0") || !strings.Contains(content, "src_vpn_gateway_ip: 34.0.0.1") || !strings.Contains(content, "dst_vpn_gateway_ip: 35.0.0.1") {
+		t.Fatalf("expected vpn gateway interface/ip fields in mermaid output, got: %s", content)
 	}
 	if !strings.Contains(content, "src_cloud_router: router-src") {
 		t.Fatalf("expected vpn source router node in mermaid output, got: %s", content)
@@ -775,6 +787,9 @@ func TestBuildVPNProjectItemsMatchesDestinationInterfaceByPeerEvidence(t *testin
 				Network:  "src-vpc",
 				Type:     "ha",
 				SelfLink: "https://www.googleapis.com/compute/v1/projects/project/regions/us-central1/vpnGateways/ha-src",
+				InterfaceIPByID: map[string]string{
+					"0": "34.0.0.1",
+				},
 			}},
 			"peer-project": {{
 				Name:     "ha-dst",
@@ -782,6 +797,10 @@ func TestBuildVPNProjectItemsMatchesDestinationInterfaceByPeerEvidence(t *testin
 				Network:  "dst-vpc",
 				Type:     "ha",
 				SelfLink: "https://www.googleapis.com/compute/v1/projects/peer-project/regions/us-central1/vpnGateways/ha-dst",
+				InterfaceIPByID: map[string]string{
+					"0": "35.0.0.1",
+					"1": "35.0.0.2",
+				},
 			}},
 		},
 		vpnTunnelsByProject: map[string][]model.VPNTunnel{
@@ -925,6 +944,9 @@ func TestBuildVPNProjectItemsMatchesDestinationInterfaceByPeerEvidence(t *testin
 	if item.DstVPNTunnel != "tunnel-dst-match" || item.DstCloudRouter != "router-dst-match" {
 		t.Fatalf("expected peer evidence to select the matching destination tunnel and router, got %+v", item)
 	}
+	if item.SrcVPNGatewayInterface != "0" || item.DstVPNGatewayInterface != "0" || item.SrcVPNGatewayIP != "34.0.0.1" || item.DstVPNGatewayIP != "35.0.0.1" {
+		t.Fatalf("expected vpn gateway interface/ip fields to propagate, got %+v", item)
+	}
 	if item.DstCloudRouterInterface != "if-dst-match" || item.DstCloudRouterInterfaceIP != "169.254.20.2" {
 		t.Fatalf("expected peer evidence to select the matching destination interface, got %+v", item)
 	}
@@ -981,6 +1003,9 @@ func TestBuildVPNProjectItemsIncludesClassicUnmappedTunnel(t *testing.T) {
 				Type:     "classic",
 				Status:   "READY",
 				SelfLink: "https://www.googleapis.com/compute/v1/projects/project/regions/us-central1/targetVpnGateways/classic-src",
+				InterfaceIPByID: map[string]string{
+					"0": "203.0.113.1",
+				},
 			}},
 		},
 		vpnTunnelsByProject: map[string][]model.VPNTunnel{
