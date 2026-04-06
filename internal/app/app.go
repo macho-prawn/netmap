@@ -413,7 +413,7 @@ func (a *App) buildVPNProjectItems(ctx context.Context, sourceProject string, de
 		return nil, err
 	}
 	if len(sourceData.Gateways) == 0 {
-		return nil, fmt.Errorf("no vpn gateways found in source project %q", sourceProject)
+		return []model.MappingItem{}, nil
 	}
 
 	tunnelsByGateway := make(map[string][]model.VPNTunnel)
