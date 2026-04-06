@@ -259,17 +259,19 @@ type vpnSourceInterfaceCandidate struct {
 }
 
 type vpnDestinationInterfaceCandidate struct {
-	Region        string
-	VPC           string
-	GatewayName   string
-	GatewayType   string
-	TunnelName    string
-	TunnelStatus  string
-	RouterName    string
-	RouterASN     string
-	InterfaceName string
-	InterfaceIP   string
-	Peers         []model.BGPPeer
+	Region           string
+	VPC              string
+	GatewayName      string
+	GatewayType      string
+	TunnelName       string
+	GatewayInterface string
+	GatewayIP        string
+	TunnelStatus     string
+	RouterName       string
+	RouterASN        string
+	InterfaceName    string
+	InterfaceIP      string
+	Peers            []model.BGPPeer
 }
 
 func (a *App) buildInterconnectReport(ctx context.Context, opts Options, targets []config.ResolvedTarget) (model.Report, error) {
@@ -705,13 +707,15 @@ func baseItem(srcProject, dstProject string, interconnect model.DedicatedInterco
 
 func vpnBaseItem(srcProject string, gateway model.VPNGateway, tunnel model.VPNTunnel) model.MappingItem {
 	item := model.MappingItem{
-		SrcProject:         srcProject,
-		SrcRegion:          firstNonEmpty(tunnel.Region, gateway.Region),
-		SrcVPNGateway:      gateway.Name,
-		SrcVPNGatewayType:  gateway.Type,
-		SrcVPNTunnel:       tunnel.Name,
-		SrcVPNTunnelStatus: firstNonEmpty(tunnel.Status),
-		Mapped:             false,
+		SrcProject:             srcProject,
+		SrcRegion:              firstNonEmpty(tunnel.Region, gateway.Region),
+		SrcVPNGateway:          gateway.Name,
+		SrcVPNGatewayType:      gateway.Type,
+		SrcVPNTunnel:           tunnel.Name,
+		SrcVPNGatewayInterface: strings.TrimSpace(tunnel.VPNGatewayInterface),
+		SrcVPNGatewayIP:        vpnGatewayInterfaceIP(gateway, tunnel.VPNGatewayInterface),
+		SrcVPNTunnelStatus:     firstNonEmpty(tunnel.Status),
+		Mapped:                 false,
 	}
 	return item
 }
@@ -769,6 +773,8 @@ func applyVPNDestinationCandidate(item *model.MappingItem, candidate vpnDestinat
 	item.DstVPNGateway = firstNonEmpty(candidate.GatewayName, item.DstVPNGateway)
 	item.DstVPNGatewayType = firstNonEmpty(candidate.GatewayType, item.DstVPNGatewayType)
 	item.DstVPNTunnel = candidate.TunnelName
+	item.DstVPNGatewayInterface = candidate.GatewayInterface
+	item.DstVPNGatewayIP = candidate.GatewayIP
 	item.DstVPNTunnelStatus = candidate.TunnelStatus
 	item.DstCloudRouter = candidate.RouterName
 	item.DstCloudRouterASN = candidate.RouterASN
@@ -786,14 +792,16 @@ func vpnDestinationInterfaceCandidates(sourceTunnel model.VPNTunnel, sourceGatew
 	for _, tunnel := range tunnels {
 		router := destinationData.RouterByKey[routerKey(tunnel.Region, tunnel.Router)]
 		base := vpnDestinationInterfaceCandidate{
-			Region:       firstNonEmpty(tunnel.Region, destinationGateway.Region),
-			VPC:          firstNonEmpty(router.Network, destinationGateway.Network),
-			GatewayName:  firstNonEmpty(destinationGateway.Name, tunnel.VPNGateway),
-			GatewayType:  firstNonEmpty(destinationGateway.Type),
-			TunnelName:   tunnel.Name,
-			TunnelStatus: tunnel.Status,
-			RouterName:   firstNonEmpty(router.Name, tunnel.Router),
-			RouterASN:    router.ASN,
+			Region:           firstNonEmpty(tunnel.Region, destinationGateway.Region),
+			VPC:              firstNonEmpty(router.Network, destinationGateway.Network),
+			GatewayName:      firstNonEmpty(destinationGateway.Name, tunnel.VPNGateway),
+			GatewayType:      firstNonEmpty(destinationGateway.Type),
+			TunnelName:       tunnel.Name,
+			GatewayInterface: strings.TrimSpace(tunnel.VPNGatewayInterface),
+			GatewayIP:        vpnGatewayInterfaceIP(destinationGateway, tunnel.VPNGatewayInterface),
+			TunnelStatus:     tunnel.Status,
+			RouterName:       firstNonEmpty(router.Name, tunnel.Router),
+			RouterASN:        router.ASN,
 		}
 
 		interfaces := interfacesForTunnel(router, tunnel.Name)
@@ -809,17 +817,19 @@ func vpnDestinationInterfaceCandidates(sourceTunnel model.VPNTunnel, sourceGatew
 		for _, iface := range interfaces {
 			peers := append([]model.BGPPeer(nil), peersByInterface[iface.Name]...)
 			candidates = append(candidates, vpnDestinationInterfaceCandidate{
-				Region:        base.Region,
-				VPC:           base.VPC,
-				GatewayName:   base.GatewayName,
-				GatewayType:   base.GatewayType,
-				TunnelName:    base.TunnelName,
-				TunnelStatus:  base.TunnelStatus,
-				RouterName:    base.RouterName,
-				RouterASN:     base.RouterASN,
-				InterfaceName: iface.Name,
-				InterfaceIP:   preferredInterfaceIP(iface, peers),
-				Peers:         peers,
+				Region:           base.Region,
+				VPC:              base.VPC,
+				GatewayName:      base.GatewayName,
+				GatewayType:      base.GatewayType,
+				TunnelName:       base.TunnelName,
+				GatewayInterface: base.GatewayInterface,
+				GatewayIP:        base.GatewayIP,
+				TunnelStatus:     base.TunnelStatus,
+				RouterName:       base.RouterName,
+				RouterASN:        base.RouterASN,
+				InterfaceName:    iface.Name,
+				InterfaceIP:      preferredInterfaceIP(iface, peers),
+				Peers:            peers,
 			})
 		}
 	}
@@ -988,6 +998,17 @@ func normalizeIPAddress(value string) string {
 		return strings.TrimSpace(value[:slash])
 	}
 	return value
+}
+
+func vpnGatewayInterfaceIP(gateway model.VPNGateway, interfaceID string) string {
+	if len(gateway.InterfaceIPByID) == 0 {
+		return ""
+	}
+	interfaceID = strings.TrimSpace(interfaceID)
+	if interfaceID == "" {
+		return ""
+	}
+	return strings.TrimSpace(gateway.InterfaceIPByID[interfaceID])
 }
 
 func anySharedString(left, right []string) bool {

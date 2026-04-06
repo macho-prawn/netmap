@@ -49,12 +49,13 @@ type CloudRouter struct {
 }
 
 type VPNGateway struct {
-	Name     string
-	Region   string
-	Network  string
-	Type     string
-	Status   string
-	SelfLink string
+	Name            string
+	Region          string
+	Network         string
+	Type            string
+	Status          string
+	SelfLink        string
+	InterfaceIPByID map[string]string
 }
 
 type VPNTunnel struct {
@@ -97,6 +98,8 @@ type MappingItem struct {
 	SrcCloudRouterInterface   string `json:"src_cloud_router_interface"`
 	SrcCloudRouterInterfaceIP string `json:"src_cloud_router_interface_ip"`
 	SrcVPNTunnel              string `json:"src_vpn_tunnel"`
+	SrcVPNGatewayInterface    string `json:"src_vpn_gateway_interface"`
+	SrcVPNGatewayIP           string `json:"src_vpn_gateway_ip"`
 	SrcVPNTunnelStatus        string `json:"src_vpn_tunnel_status"`
 	Mapped                    bool   `json:"mapped"`
 	SrcRegion                 string `json:"src_region"`
@@ -112,6 +115,8 @@ type MappingItem struct {
 	DstVPNGateway             string `json:"dst_vpn_gateway"`
 	DstVPNGatewayType         string `json:"dst_vpn_gateway_type"`
 	DstVPNTunnel              string `json:"dst_vpn_tunnel"`
+	DstVPNGatewayInterface    string `json:"dst_vpn_gateway_interface"`
+	DstVPNGatewayIP           string `json:"dst_vpn_gateway_ip"`
 	DstVPNTunnelStatus        string `json:"dst_vpn_tunnel_status"`
 	DstCloudRouter            string `json:"dst_cloud_router"`
 	DstCloudRouterASN         string `json:"dst_cloud_router_asn"`

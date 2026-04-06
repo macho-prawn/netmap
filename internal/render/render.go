@@ -60,9 +60,13 @@ var vpnSeparatedHeader = []string{
 	"src_cloud_router_interface",
 	"src_cloud_router_interface_ip",
 	"src_vpn_tunnel",
+	"src_vpn_gateway_interface",
+	"src_vpn_gateway_ip",
 	"src_vpn_tunnel_status",
 	"bgp_peering_status",
 	"dst_vpn_tunnel",
+	"dst_vpn_gateway_interface",
+	"dst_vpn_gateway_ip",
 	"dst_vpn_tunnel_status",
 	"dst_cloud_router",
 	"dst_cloud_router_asn",
@@ -164,9 +168,13 @@ func vpnSeparatedRecord(item model.MappingItem) []string {
 		item.SrcCloudRouterInterface,
 		item.SrcCloudRouterInterfaceIP,
 		item.SrcVPNTunnel,
+		item.SrcVPNGatewayInterface,
+		item.SrcVPNGatewayIP,
 		item.SrcVPNTunnelStatus,
 		item.BGPPeeringStatus,
 		item.DstVPNTunnel,
+		item.DstVPNGatewayInterface,
+		item.DstVPNGatewayIP,
 		item.DstVPNTunnelStatus,
 		item.DstCloudRouter,
 		item.DstCloudRouterASN,
@@ -999,10 +1007,12 @@ type vpnSourceRouterGroup struct {
 }
 
 type vpnSourceTunnelGroup struct {
-	SrcVPNTunnel       string
-	SrcVPNTunnelStatus string
-	Mapped             bool
-	BGPStatuses        []vpnBGPStatusGroup
+	SrcVPNTunnel           string
+	SrcVPNGatewayInterface string
+	SrcVPNGatewayIP        string
+	SrcVPNTunnelStatus     string
+	Mapped                 bool
+	BGPStatuses            []vpnBGPStatusGroup
 }
 
 type vpnBGPStatusGroup struct {
@@ -1011,9 +1021,11 @@ type vpnBGPStatusGroup struct {
 }
 
 type vpnDestinationTunnelGroup struct {
-	DstVPNTunnel       string
-	DstVPNTunnelStatus string
-	DstRouters         []vpnDestinationRouterGroup
+	DstVPNTunnel           string
+	DstVPNGatewayInterface string
+	DstVPNGatewayIP        string
+	DstVPNTunnelStatus     string
+	DstRouters             []vpnDestinationRouterGroup
 }
 
 type vpnDestinationRouterGroup struct {
@@ -1084,9 +1096,11 @@ type vpnJSONSourceRouter struct {
 }
 
 type vpnJSONSourceTunnel struct {
-	SrcVPNTunnel       string             `json:"src_vpn_tunnel"`
-	SrcVPNTunnelStatus string             `json:"src_vpn_tunnel_status"`
-	BGPStatuses        []vpnJSONBGPStatus `json:"bgp_peering_statuses,omitempty"`
+	SrcVPNTunnel           string             `json:"src_vpn_tunnel"`
+	SrcVPNGatewayInterface string             `json:"src_vpn_gateway_interface"`
+	SrcVPNGatewayIP        string             `json:"src_vpn_gateway_ip"`
+	SrcVPNTunnelStatus     string             `json:"src_vpn_tunnel_status"`
+	BGPStatuses            []vpnJSONBGPStatus `json:"bgp_peering_statuses,omitempty"`
 }
 
 type vpnJSONBGPStatus struct {
@@ -1095,9 +1109,11 @@ type vpnJSONBGPStatus struct {
 }
 
 type vpnJSONDestinationTunnel struct {
-	DstVPNTunnel       string                     `json:"dst_vpn_tunnel"`
-	DstVPNTunnelStatus string                     `json:"dst_vpn_tunnel_status"`
-	DstRouters         []vpnJSONDestinationRouter `json:"dst_cloud_routers,omitempty"`
+	DstVPNTunnel           string                     `json:"dst_vpn_tunnel"`
+	DstVPNGatewayInterface string                     `json:"dst_vpn_gateway_interface"`
+	DstVPNGatewayIP        string                     `json:"dst_vpn_gateway_ip"`
+	DstVPNTunnelStatus     string                     `json:"dst_vpn_tunnel_status"`
+	DstRouters             []vpnJSONDestinationRouter `json:"dst_cloud_routers,omitempty"`
 }
 
 type vpnJSONDestinationRouter struct {
@@ -1159,8 +1175,10 @@ func buildVPNJSONOrg(group vpnOrgGroup) vpnJSONOrgNode {
 							}
 							for _, srcTunnel := range srcRouter.SrcTunnels {
 								tunnelNode := vpnJSONSourceTunnel{
-									SrcVPNTunnel:       valueOrUnknown(srcTunnel.SrcVPNTunnel),
-									SrcVPNTunnelStatus: valueOrUnknown(srcTunnel.SrcVPNTunnelStatus),
+									SrcVPNTunnel:           valueOrUnknown(srcTunnel.SrcVPNTunnel),
+									SrcVPNGatewayInterface: valueOrUnknown(srcTunnel.SrcVPNGatewayInterface),
+									SrcVPNGatewayIP:        valueOrUnknown(srcTunnel.SrcVPNGatewayIP),
+									SrcVPNTunnelStatus:     valueOrUnknown(srcTunnel.SrcVPNTunnelStatus),
 								}
 								for _, status := range srcTunnel.BGPStatuses {
 									statusNode := vpnJSONBGPStatus{
@@ -1168,8 +1186,10 @@ func buildVPNJSONOrg(group vpnOrgGroup) vpnJSONOrgNode {
 									}
 									for _, dstTunnel := range status.DstTunnels {
 										dstTunnelNode := vpnJSONDestinationTunnel{
-											DstVPNTunnel:       valueOrUnknown(dstTunnel.DstVPNTunnel),
-											DstVPNTunnelStatus: valueOrUnknown(dstTunnel.DstVPNTunnelStatus),
+											DstVPNTunnel:           valueOrUnknown(dstTunnel.DstVPNTunnel),
+											DstVPNGatewayInterface: valueOrUnknown(dstTunnel.DstVPNGatewayInterface),
+											DstVPNGatewayIP:        valueOrUnknown(dstTunnel.DstVPNGatewayIP),
+											DstVPNTunnelStatus:     valueOrUnknown(dstTunnel.DstVPNTunnelStatus),
 										}
 										for _, dstRouter := range dstTunnel.DstRouters {
 											dstRouterNode := vpnJSONDestinationRouter{
@@ -1422,9 +1442,11 @@ func groupVPNSrcTunnels(items []model.MappingItem) []vpnSourceTunnelGroup {
 			continue
 		}
 		group := vpnSourceTunnelGroup{
-			SrcVPNTunnel:       name,
-			SrcVPNTunnelStatus: groupItems[0].SrcVPNTunnelStatus,
-			BGPStatuses:        groupVPNBGPStatuses(groupItems),
+			SrcVPNTunnel:           name,
+			SrcVPNGatewayInterface: groupItems[0].SrcVPNGatewayInterface,
+			SrcVPNGatewayIP:        groupItems[0].SrcVPNGatewayIP,
+			SrcVPNTunnelStatus:     groupItems[0].SrcVPNTunnelStatus,
+			BGPStatuses:            groupVPNBGPStatuses(groupItems),
 		}
 		for _, item := range groupItems {
 			if item.Mapped {
@@ -1476,9 +1498,11 @@ func groupVPNDestinationTunnels(items []model.MappingItem) []vpnDestinationTunne
 	var result []vpnDestinationTunnelGroup
 	for _, name := range names {
 		result = append(result, vpnDestinationTunnelGroup{
-			DstVPNTunnel:       name,
-			DstVPNTunnelStatus: grouped[name][0].DstVPNTunnelStatus,
-			DstRouters:         groupVPNDestinationRouters(grouped[name]),
+			DstVPNTunnel:           name,
+			DstVPNGatewayInterface: grouped[name][0].DstVPNGatewayInterface,
+			DstVPNGatewayIP:        grouped[name][0].DstVPNGatewayIP,
+			DstVPNTunnelStatus:     grouped[name][0].DstVPNTunnelStatus,
+			DstRouters:             groupVPNDestinationRouters(grouped[name]),
 		})
 	}
 	return result
@@ -1685,10 +1709,12 @@ func drawVPNTreeSourceTunnel(b *strings.Builder, tunnel vpnSourceTunnelGroup, in
 	}
 	fmt.Fprintf(
 		b,
-		"%s%s src_vpn_tunnel: %s [src_vpn_tunnel_status: %s]\n",
+		"%s%s src_vpn_tunnel: %s [src_vpn_gateway_interface: %s, src_vpn_gateway_ip: %s, src_vpn_tunnel_status: %s]\n",
 		indent,
 		prefix,
 		valueOrUnknown(tunnel.SrcVPNTunnel),
+		valueOrUnknown(tunnel.SrcVPNGatewayInterface),
+		valueOrUnknown(tunnel.SrcVPNGatewayIP),
 		valueOrUnknown(tunnel.SrcVPNTunnelStatus),
 	)
 	if !tunnel.Mapped {
@@ -1722,10 +1748,12 @@ func drawVPNTreeDestinationTunnel(b *strings.Builder, tunnel vpnDestinationTunne
 	}
 	fmt.Fprintf(
 		b,
-		"%s%s dst_vpn_tunnel: %s [dst_vpn_tunnel_status: %s]\n",
+		"%s%s dst_vpn_tunnel: %s [dst_vpn_gateway_interface: %s, dst_vpn_gateway_ip: %s, dst_vpn_tunnel_status: %s]\n",
 		indent,
 		prefix,
 		valueOrUnknown(tunnel.DstVPNTunnel),
+		valueOrUnknown(tunnel.DstVPNGatewayInterface),
+		valueOrUnknown(tunnel.DstVPNGatewayIP),
 		valueOrUnknown(tunnel.DstVPNTunnelStatus),
 	)
 	for idx, router := range tunnel.DstRouters {
@@ -1816,8 +1844,10 @@ func vpnSourceRouterItemLabel(item model.MappingItem) string {
 
 func vpnSourceTunnelItemLabel(item model.MappingItem) string {
 	return fmt.Sprintf(
-		"src_vpn_tunnel: %s<br>src_vpn_tunnel_status: %s",
+		"src_vpn_tunnel: %s<br>src_vpn_gateway_interface: %s<br>src_vpn_gateway_ip: %s<br>src_vpn_tunnel_status: %s",
 		valueOrUnknown(item.SrcVPNTunnel),
+		valueOrUnknown(item.SrcVPNGatewayInterface),
+		valueOrUnknown(item.SrcVPNGatewayIP),
 		valueOrUnknown(item.SrcVPNTunnelStatus),
 	)
 }
@@ -1832,8 +1862,10 @@ func vpnDestinationGatewayItemLabel(item model.MappingItem) string {
 
 func vpnDestinationTunnelItemLabel(item model.MappingItem) string {
 	return fmt.Sprintf(
-		"dst_vpn_tunnel: %s<br>dst_vpn_tunnel_status: %s",
+		"dst_vpn_tunnel: %s<br>dst_vpn_gateway_interface: %s<br>dst_vpn_gateway_ip: %s<br>dst_vpn_tunnel_status: %s",
 		valueOrUnknown(item.DstVPNTunnel),
+		valueOrUnknown(item.DstVPNGatewayInterface),
+		valueOrUnknown(item.DstVPNGatewayIP),
 		valueOrUnknown(item.DstVPNTunnelStatus),
 	)
 }
