@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -58,6 +59,7 @@ type Options struct {
 	Environment   string
 	SourceProject string
 	Format        string
+	OutputDir     string
 	ConfigPath    string
 	ShowHelp      bool
 	Usage         string
@@ -187,6 +189,7 @@ func ParseOptions(args []string) (Options, error) {
 	fs.StringVar(&opts.Environment, "e", "", "environment selector")
 	fs.StringVar(&opts.SourceProject, "p", "", "source project for interconnect discovery")
 	fs.StringVar(&opts.Format, "f", "", "optional output format: html, csv, tsv, json, tree")
+	fs.StringVar(&opts.OutputDir, "od", "", "optional output directory for generated files")
 	fs.StringVar(&opts.ConfigPath, "c", "config.yaml", "config path")
 	fs.Usage = func() {
 		fmt.Fprint(&usage, usageText())
@@ -1128,12 +1131,16 @@ func defaultOutputPath(format string, opts Options, report model.Report, ext, ti
 		base = fmt.Sprintf("netmap-interconnect-%s-to-%s-%s", opts.SourceProject, target, timestamp)
 	}
 	if format == render.FormatJSON {
-		return base + ".json"
+		base += ".json"
+	} else if format == render.FormatTree {
+		base += ".tree.txt"
+	} else {
+		base += "." + ext
 	}
-	if format == render.FormatTree {
-		return base + ".tree.txt"
+	if strings.TrimSpace(opts.OutputDir) == "" {
+		return base
 	}
-	return base + "." + ext
+	return filepath.Join(opts.OutputDir, base)
 }
 
 func vpnOutputBaseName(opts Options, timestamp string) string {
