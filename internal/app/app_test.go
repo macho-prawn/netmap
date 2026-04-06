@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"netmap/internal/model"
+	"netmap/internal/render"
 )
 
 type memoryFileStore struct {
@@ -157,6 +159,16 @@ func TestParseOptionsAcceptsShortConfigFlag(t *testing.T) {
 	}
 }
 
+func TestParseOptionsAcceptsOutputDirFlag(t *testing.T) {
+	opts, err := ParseOptions([]string{"-t", "interconnect", "-o", "dbc", "-p", "src-project", "-od", "out"})
+	if err != nil {
+		t.Fatalf("parse options: %v", err)
+	}
+	if opts.OutputDir != "out" {
+		t.Fatalf("expected output dir to be set, got %+v", opts)
+	}
+}
+
 func TestParseOptionsRejectsLegacyConfigFlag(t *testing.T) {
 	_, err := ParseOptions([]string{"-t", "interconnect", "-o", "dbc", "-p", "src-project", "-config", "custom.yaml"})
 	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined: -config") {
@@ -187,6 +199,9 @@ func TestParseOptionsHelp(t *testing.T) {
 	if !strings.Contains(opts.Usage, "HTML output file:    netmap-interconnect-<src>-to-<dst>-<timestamp>.html") {
 		t.Fatalf("expected html output guidance, got %+v", opts)
 	}
+	if !strings.Contains(opts.Usage, "-od       optional, output directory for generated files; defaults to cwd") {
+		t.Fatalf("expected output directory flag help text, got %+v", opts)
+	}
 	if !strings.Contains(opts.Usage, "-c        optional, defaults to config.yaml") || strings.Contains(opts.Usage, "-config") {
 		t.Fatalf("expected short config flag help text, got %+v", opts)
 	}
@@ -216,6 +231,9 @@ func TestParseOptionsHelp(t *testing.T) {
 	}
 	if !strings.Contains(opts.Usage, "Use -f html to write a self-contained offline Mermaid viewer page.") {
 		t.Fatalf("expected blank line before html viewer note, got %+v", opts)
+	}
+	if !strings.Contains(opts.Usage, "Output files are written to the current working directory by default, or under -od when specified.") {
+		t.Fatalf("expected output directory guidance, got %+v", opts)
 	}
 }
 
@@ -342,6 +360,69 @@ func TestRunWritesMermaidByDefault(t *testing.T) {
 	}
 	if !containsTaskTable(statusOutput) {
 		t.Fatalf("expected ascii task table, got: %s", statusOutput)
+	}
+}
+
+func TestRunWritesOutputIntoSelectedDirectory(t *testing.T) {
+	store := &memoryFileStore{
+		files: map[string][]byte{
+			"config.yaml": []byte(validConfig),
+		},
+	}
+	app, err := New(store, mockProvider{
+		interconnects: []model.DedicatedInterconnect{{
+			Name:          "ic-1",
+			State:         "ACTIVE",
+			MacsecEnabled: true,
+			MacsecKeyName: "macsec-key-a",
+		}},
+		attachments: []model.VLANAttachment{{
+			Name:         "attachment-1",
+			Region:       "us-central1",
+			Network:      "vpc-a",
+			State:        "ACTIVE",
+			Interconnect: "ic-1",
+			Router:       "router-1",
+		}},
+		routers: []model.CloudRouter{{
+			Name:   "router-1",
+			Region: "us-central1",
+			ASN:    "64512",
+		}},
+		statuses: map[string]model.RouterStatus{
+			"us-central1/router-1": {
+				RouterName: "router-1",
+				Region:     "us-central1",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.now = func() time.Time {
+		return time.Date(2026, time.March, 28, 0, 0, 0, 0, time.UTC)
+	}
+	var status bytes.Buffer
+	app.status = &status
+
+	err = app.Run(context.Background(), []string{
+		"-t", "interconnect",
+		"-o", "dbc",
+		"-w", "native",
+		"-e", "dev",
+		"-p", "src-project",
+		"-od", "out",
+	})
+	if err != nil {
+		t.Fatalf("run app: %v", err)
+	}
+
+	want := filepath.Join("out", "netmap-interconnect-src-project-to-project-20260328T000000Z.mmd")
+	if _, ok := store.files[want]; !ok {
+		t.Fatalf("expected output file to be written under selected directory, got files: %#v", store.files)
+	}
+	if !strings.Contains(status.String(), "Output: "+want) {
+		t.Fatalf("expected final summary row to include output directory, got: %s", status.String())
 	}
 }
 
@@ -1004,6 +1085,42 @@ func TestDefaultOutputPathUsesVPNSelectorNaming(t *testing.T) {
 		if got := defaultOutputPath("", tc.opts, report, "mmd", timestamp); got != tc.want {
 			t.Fatalf("%s: expected %q, got %q", tc.name, tc.want, got)
 		}
+	}
+}
+
+func TestDefaultOutputPathPrefixesSelectedOutputDirectory(t *testing.T) {
+	timestamp := "20260328T000000Z"
+
+	interconnectReport := model.Report{
+		Type:               TypeInterconnect,
+		DestinationProject: "project",
+	}
+	interconnectOpts := Options{
+		Type:          TypeInterconnect,
+		Org:           "dbc",
+		SourceProject: "src-project",
+		OutputDir:     "out",
+	}
+	if got := defaultOutputPath("", interconnectOpts, interconnectReport, "mmd", timestamp); got != filepath.Join("out", "netmap-interconnect-src-project-to-project-20260328T000000Z.mmd") {
+		t.Fatalf("expected interconnect output path with directory prefix, got %q", got)
+	}
+	if got := defaultOutputPath(render.FormatJSON, interconnectOpts, interconnectReport, "json", timestamp); got != filepath.Join("out", "netmap-interconnect-src-project-to-project-20260328T000000Z.json") {
+		t.Fatalf("expected interconnect json output path with directory prefix, got %q", got)
+	}
+	if got := defaultOutputPath(render.FormatTree, interconnectOpts, interconnectReport, "tree.txt", timestamp); got != filepath.Join("out", "netmap-interconnect-src-project-to-project-20260328T000000Z.tree.txt") {
+		t.Fatalf("expected interconnect tree output path with directory prefix, got %q", got)
+	}
+
+	vpnReport := model.Report{Type: TypeVPN}
+	vpnOpts := Options{
+		Type:        TypeVPN,
+		Org:         "dbc",
+		Workload:    "native",
+		Environment: "dev",
+		OutputDir:   "out",
+	}
+	if got := defaultOutputPath("", vpnOpts, vpnReport, "mmd", timestamp); got != filepath.Join("out", "netmap-vpn-dbc-native-dev-20260328T000000Z.mmd") {
+		t.Fatalf("expected vpn output path with directory prefix, got %q", got)
 	}
 }
 

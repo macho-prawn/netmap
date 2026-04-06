@@ -124,6 +124,7 @@ The usage text shown by `./netmap` and `./netmap -h` is sourced from the editabl
 -e  optional, environment selector; with -o and no -w, expands all workloads containing that environment
 -p  mandatory only for -t interconnect; source project containing dedicated interconnects
 -f  optional, output format override: html, csv, tsv, json, or tree
+-od optional, output directory for generated files; defaults to cwd
 -c  optional, defaults to config.yaml
 -h  optional, prints usage
 ```
@@ -132,39 +133,27 @@ The usage text shown by `./netmap` and `./netmap -h` is sourced from the editabl
 
 ### `-t interconnect`
 
-```text
-Selector expansion:
-  -o only: all workloads and environments under that org
-  -o + -w: all environments in that workload
-  -o + -e: all workloads containing that environment
-  -o + -w + -e: one exact tuple
-
-Behavior:
-  Lists dedicated interconnects in the source project.
-  Fails if the source project has no dedicated interconnects.
-  Lists destination VLAN attachments and Cloud Routers across regions.
-  Maps router interfaces and BGP peers where available.
-  Uses a shared hierarchy in JSON, tree, Mermaid, and HTML output rooted at org -> workload -> environment -> src_project -> src_interconnect.
-  Uses one canonical field set across outputs, matching the CSV/TSV column names.
-  Writes progress to stderr as an ASCII 2-column task table with one timed row per resolved org/workload/environment tuple, a Braille spinner on the active row, completed rows, and a merged final summary row.
-  Validates CLI parameters and config selector semantics before initializing ADC-backed Compute discovery.
-  Collapses identical environment, src_project, src_interconnect, and dst_region labels into shared Mermaid graph nodes.
-  Uses Google Cloud Go libraries and ADC instead of shelling out to gcloud.
-```
+- Lists dedicated interconnects in the source project.
+- Fails if the source project has no dedicated interconnects.
+- Lists destination VLAN attachments and Cloud Routers across regions.
+- Maps router interfaces and BGP peers where available.
+- Uses a shared hierarchy in JSON, tree, Mermaid, and HTML output rooted at `org -> workload -> environment -> src_project -> src_interconnect`.
+- Uses one canonical field set across outputs, matching the CSV/TSV column names.
+- Writes progress to stderr as an ASCII 2-column task table with one timed row per resolved org/workload/environment tuple, a Braille spinner on the active row, completed rows, and a merged final summary row.
+- Validates CLI parameters and config selector semantics before initializing ADC-backed Compute discovery.
+- Collapses identical environment, src_project, src_interconnect, and dst_region labels into shared Mermaid graph nodes.
+- Uses Google Cloud Go libraries and ADC instead of shelling out to `gcloud`.
 
 ### `-t vpn`
 
-```text
--p is rejected.
-Resolves selected config tuples as source projects.
-Lists source HA and Classic VPN gateways and connected VPN tunnels.
-Uses HA tunnel peer gateway references to discover destination GCP projects, VPN gateways, tunnels, and Cloud Routers.
-Includes Classic VPN gateways and tunnels as source-side unmapped output when no peer GCP project can be discovered.
-Uses a VPN-specific hierarchy across JSON, tree, Mermaid, and HTML output:
-  org -> workload -> environment -> src_project -> src_region -> src_vpn_gateway -> src_tunnel -> src_cloud_router -> bgp_peering_status -> dst_cloud_router -> dst_tunnel -> dst_vpn_gateway -> dst_region -> dst_project
-Uses a VPN-specific Mermaid grouping strategy that shares repeated `src_project -> src_region[src_vpc]` nodes and collapses identical destination gateway/region/project paths within the same source-tunnel branch.
-Uses the same csv, tsv, json, tree, mermaid, and html output formats as interconnect reports.
-```
+- `-p` is rejected.
+- Resolves selected config tuples as source projects.
+- Lists source HA and Classic VPN gateways and connected VPN tunnels.
+- Uses HA tunnel peer gateway references to discover destination GCP projects, VPN gateways, tunnels, and Cloud Routers.
+- Includes Classic VPN gateways and tunnels as source-side unmapped output when no peer GCP project can be discovered.
+- Uses a VPN-specific hierarchy across JSON, tree, Mermaid, and HTML output: `org -> workload -> environment -> src_project -> src_region -> src_vpn_gateway -> src_tunnel -> src_cloud_router -> bgp_peering_status -> dst_cloud_router -> dst_tunnel -> dst_vpn_gateway -> dst_region -> dst_project`.
+- Uses a VPN-specific Mermaid grouping strategy that shares repeated `src_project -> src_region[src_vpc]` nodes and collapses identical destination gateway/region/project paths within the same source-tunnel branch.
+- Uses the same csv, tsv, json, tree, mermaid, and html output formats as interconnect reports.
 
 ## Output
 
@@ -176,6 +165,8 @@ Uses the same csv, tsv, json, tree, mermaid, and html output formats as intercon
 | Selector naming | n/a | `-o/-w/-e`: `<workload>-<env>`; `-o` only: `all`; `-o/-w`: `<workload>-all`; `-o/-e`: `all-<env>` |
 
 `-f html` writes a self-contained offline Mermaid viewer page that can be opened directly in a browser.
+
+Generated files are written to the current working directory by default, or under the directory provided with `-od`.
 
 Structured `json`, `tree`, `mermaid`, and `html` outputs use branch-scoped unprefixed field names in visible labels and JSON leaf keys. Flat `csv` and `tsv` outputs remain canonical and keep `src_` / `dst_` prefixes.
 

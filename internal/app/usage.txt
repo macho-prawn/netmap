@@ -2,8 +2,8 @@ Usage:
 
   netmap [-h]
   netmap version
-  netmap -t interconnect -o <org> [-w <workload>] [-e <env>] -p <src-project> [-f <format>] [-c <path>]
-  netmap -t vpn -o <org> [-w <workload>] [-e <env>] [-f <format>] [-c <path>]
+  netmap -t interconnect -o <org> [-w <workload>] [-e <env>] -p <src-project> [-f <format>] [-od <dir>] [-c <path>]
+  netmap -t vpn -o <org> [-w <workload>] [-e <env>] [-f <format>] [-od <dir>] [-c <path>]
 
 Flags:
   -t        mandatory, accepts interconnect or vpn
@@ -12,6 +12,7 @@ Flags:
   -e        optional, environment selector; with -o and no -w, expands all workloads containing that environment
   -p        mandatory only for -t interconnect; source project containing dedicated interconnects
   -f        optional, output format override: html, csv, tsv, json, or tree
+  -od       optional, output directory for generated files; defaults to cwd
   -c        optional, defaults to config.yaml
   -h        optional, print usage
 
@@ -26,6 +27,7 @@ Selector Expansion:
 
 Output:
   Omit -f to write Mermaid output by default.
+  Output files are written to the current working directory by default, or under -od when specified.
   HTML output file:    netmap-interconnect-<src>-to-<dst>-<timestamp>.html
   Mermaid output file: netmap-interconnect-<src>-to-<dst>-<timestamp>.mmd
   CSV output file:     netmap-interconnect-<src>-to-<dst>-<timestamp>.csv
