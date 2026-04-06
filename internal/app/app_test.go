@@ -1196,6 +1196,212 @@ func TestBuildVPNProjectItemsIncludesClassicUnmappedTunnel(t *testing.T) {
 	}
 }
 
+func TestBuildVPNProjectItemsSkipsProjectWithoutVPNGateways(t *testing.T) {
+	store := &memoryFileStore{files: map[string][]byte{}}
+	app, err := New(store, mockProvider{})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+
+	items, err := app.buildVPNProjectItems(context.Background(), "project", map[string]vpnProjectData{})
+	if err != nil {
+		t.Fatalf("build vpn project items: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected no vpn items for project without vpn gateways, got %+v", items)
+	}
+}
+
+func TestRunVPNSkipsProjectsWithoutVPNGateways(t *testing.T) {
+	store := &memoryFileStore{
+		files: map[string][]byte{
+			"config.yaml": []byte(vpnMixedGatewayConfig),
+		},
+	}
+	app, err := New(store, mockProvider{
+		vpnGatewaysByProject: map[string][]model.VPNGateway{
+			"project-with-gateway": {{
+				Name:     "ha-src",
+				Region:   "us-central1",
+				Network:  "src-vpc",
+				Type:     "ha",
+				Status:   "unknown",
+				SelfLink: "https://www.googleapis.com/compute/v1/projects/project-with-gateway/regions/us-central1/vpnGateways/ha-src",
+				InterfaceIPByID: map[string]string{
+					"0": "34.0.0.1",
+				},
+			}},
+			"peer-project": {{
+				Name:     "ha-dst",
+				Region:   "us-central1",
+				Network:  "dst-vpc",
+				Type:     "ha",
+				Status:   "unknown",
+				SelfLink: "https://www.googleapis.com/compute/v1/projects/peer-project/regions/us-central1/vpnGateways/ha-dst",
+				InterfaceIPByID: map[string]string{
+					"0": "35.0.0.1",
+				},
+			}},
+		},
+		vpnTunnelsByProject: map[string][]model.VPNTunnel{
+			"project-with-gateway": {{
+				Name:                "tunnel-src",
+				Region:              "us-central1",
+				Status:              "ESTABLISHED",
+				VPNGateway:          "ha-src",
+				PeerGCPGateway:      "https://www.googleapis.com/compute/v1/projects/peer-project/regions/us-central1/vpnGateways/ha-dst",
+				Router:              "router-src",
+				VPNGatewayInterface: "0",
+			}},
+			"peer-project": {{
+				Name:                "tunnel-dst",
+				Region:              "us-central1",
+				Status:              "ESTABLISHED",
+				VPNGateway:          "ha-dst",
+				PeerGCPGateway:      "https://www.googleapis.com/compute/v1/projects/project-with-gateway/regions/us-central1/vpnGateways/ha-src",
+				Router:              "router-dst",
+				VPNGatewayInterface: "0",
+			}},
+		},
+		routersByProject: map[string][]model.CloudRouter{
+			"project-with-gateway": {{
+				Name:    "router-src",
+				Region:  "us-central1",
+				ASN:     "64512",
+				Network: "src-vpc",
+				Interfaces: []model.RouterInterface{{
+					Name:            "if-src",
+					LinkedVPNTunnel: "tunnel-src",
+					IPRange:         "169.254.1.1/30",
+				}},
+			}},
+			"peer-project": {{
+				Name:    "router-dst",
+				Region:  "us-central1",
+				ASN:     "64513",
+				Network: "dst-vpc",
+				Interfaces: []model.RouterInterface{{
+					Name:            "if-dst",
+					LinkedVPNTunnel: "tunnel-dst",
+					IPRange:         "169.254.1.2/30",
+				}},
+			}},
+		},
+		statusesByProjectRoute: map[string]model.RouterStatus{
+			"project-with-gateway/us-central1/router-src": {
+				RouterName: "router-src",
+				Region:     "us-central1",
+				Peers: []model.BGPPeerStatus{{
+					Name:         "peer-src",
+					LocalIP:      "169.254.1.1",
+					RemoteIP:     "169.254.1.2",
+					SessionState: "UP",
+				}},
+			},
+			"peer-project/us-central1/router-dst": {
+				RouterName: "router-dst",
+				Region:     "us-central1",
+				Peers: []model.BGPPeerStatus{{
+					Name:         "peer-dst",
+					LocalIP:      "169.254.1.2",
+					RemoteIP:     "169.254.1.1",
+					SessionState: "UP",
+				}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.now = func() time.Time {
+		return time.Date(2026, time.March, 28, 0, 0, 0, 0, time.UTC)
+	}
+	var status bytes.Buffer
+	app.status = &status
+
+	err = app.Run(context.Background(), []string{
+		"-t", "vpn",
+		"-o", "dbc",
+		"-w", "native",
+		"-f", "tree",
+	})
+	if err != nil {
+		t.Fatalf("run app: %v", err)
+	}
+
+	data, ok := store.files["netmap-vpn-dbc-native-all-20260328T000000Z.tree.txt"]
+	if !ok {
+		t.Fatalf("expected vpn tree output file to be written, got files: %#v", store.files)
+	}
+	content := string(data)
+	if !strings.Contains(content, "project: project-with-gateway") {
+		t.Fatalf("expected mapped vpn project to appear in output, got: %s", content)
+	}
+	if strings.Contains(content, "project-no-gateway") {
+		t.Fatalf("expected project without vpn gateways to be excluded from output, got: %s", content)
+	}
+
+	statusOutput := status.String()
+	if !strings.Contains(statusOutput, "✅ Completed org=dbc workload=native environment=dev project=project-with-gateway") {
+		t.Fatalf("expected completion status for project with vpn gateway, got: %s", statusOutput)
+	}
+	if !strings.Contains(statusOutput, "✅ Completed org=dbc workload=native environment=prod project=project-no-gateway") {
+		t.Fatalf("expected completion status for project without vpn gateways, got: %s", statusOutput)
+	}
+	if strings.Contains(statusOutput, "❌ Failed") {
+		t.Fatalf("expected no failed status rows, got: %s", statusOutput)
+	}
+}
+
+func TestRunVPNWritesHeaderOnlyWhenAllProjectsLackVPNGateways(t *testing.T) {
+	store := &memoryFileStore{
+		files: map[string][]byte{
+			"config.yaml": []byte(validConfig),
+		},
+	}
+	app, err := New(store, mockProvider{})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	app.now = func() time.Time {
+		return time.Date(2026, time.March, 28, 0, 0, 0, 0, time.UTC)
+	}
+	var status bytes.Buffer
+	app.status = &status
+
+	err = app.Run(context.Background(), []string{
+		"-t", "vpn",
+		"-o", "dbc",
+		"-w", "native",
+		"-e", "dev",
+		"-f", "csv",
+	})
+	if err != nil {
+		t.Fatalf("run app: %v", err)
+	}
+
+	data, ok := store.files["netmap-vpn-dbc-native-dev-20260328T000000Z.csv"]
+	if !ok {
+		t.Fatalf("expected vpn csv output file to be written, got files: %#v", store.files)
+	}
+	content := strings.TrimSpace(string(data))
+	lines := strings.Split(content, "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected header-only csv output for projects without vpn gateways, got: %q", content)
+	}
+	if !strings.HasPrefix(lines[0], "org,workload,environment,src_project,src_region,src_vpn_gateway") {
+		t.Fatalf("expected vpn csv header in empty output, got: %q", lines[0])
+	}
+
+	statusOutput := status.String()
+	if !strings.Contains(statusOutput, "✅ Completed org=dbc workload=native environment=dev project=project") {
+		t.Fatalf("expected completion status for project without vpn gateways, got: %s", statusOutput)
+	}
+	if !strings.Contains(statusOutput, "Output: netmap-vpn-dbc-native-dev-20260328T000000Z.csv") {
+		t.Fatalf("expected final output path in status summary, got: %s", statusOutput)
+	}
+}
+
 func TestBuildMappingItemsIncludesGlobalSrcRegionAndUnmapped(t *testing.T) {
 	items := buildMappingItems(
 		"src-project",
@@ -1404,6 +1610,18 @@ org:
             project_id: project-a
           - name: prod
             project_id: project-b
+`
+
+const vpnMixedGatewayConfig = `
+org:
+  - name: dbc
+    workload:
+      - name: native
+        env:
+          - name: dev
+            project_id: project-with-gateway
+          - name: prod
+            project_id: project-no-gateway
 `
 
 const duplicateProjectConfig = `
